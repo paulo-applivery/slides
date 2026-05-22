@@ -1,0 +1,215 @@
+/* =============================================================
+   APPLIVERY SLIDES — Foundations (dark default + light)
+   Derived from Applivery DS (colors_and_type.css + Smart Attributes.html
+   dark adaptation). Brand primary #0241E3 promoted to #5C8BFF on dark
+   for WCAG AA on body text.
+   ============================================================= */
+
+@font-face { font-family: 'Outfit'; font-style: normal; font-weight: 300; font-display: swap; src: url('fonts/Outfit-Light.ttf') format('truetype'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/400-Outfit-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/Outfit-Medium.ttf') format('truetype'); }
+@font-face { font-family: 'Outfit'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/500-Outfit-SemiBold.ttf') format('truetype'); }
+
+/* ---------- DARK (default) ---------- */
+:root, :root[data-theme="dark"] {
+  --bg:                 #050B1F;
+  --bg-elev-1:          #0B1224;
+  --bg-elev-2:          #131C36;
+  --bg-elev-3:          #1B2647;
+  --bg-brand-tint:      rgba(92, 139, 255, 0.08);
+  --bg-brand-tint-strong: rgba(92, 139, 255, 0.16);
+
+  --text-primary:       #F1F6FF;
+  --text-secondary:     #C2CDE8;
+  --text-tertiary:      #8A98BA;
+  --text-muted:         #6A7898;
+
+  --brand:              #0241E3;        /* canonical brand — used for glows / fills */
+  --primary:            #5C8BFF;        /* AA on dark for text/strokes */
+  --primary-hover:      #82A6FF;
+  --primary-press:      #3F6FE8;
+  --primary-soft:       rgba(92, 139, 255, 0.12);
+  --primary-soft-strong:rgba(92, 139, 255, 0.22);
+
+  --success:            #4ADE80;
+  --success-soft:       rgba(74, 222, 128, 0.12);
+  --warning:            #FBBF24;
+  --warning-soft:       rgba(251, 191, 36, 0.12);
+  --danger:             #F87171;
+  --danger-soft:        rgba(248, 113, 113, 0.12);
+  --info:               #60A5FA;
+  --info-soft:          rgba(96, 165, 250, 0.12);
+
+  --border:             rgba(255, 255, 255, 0.08);
+  --border-strong:      rgba(255, 255, 255, 0.14);
+  --border-brand:       rgba(92, 139, 255, 0.32);
+
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:  0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px var(--border);
+  --shadow-lg:  0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--border);
+  --shadow-glow:0 0 0 4px rgba(92, 139, 255, 0.18);
+
+  /* Stripe & HubSpot accent colors (brand-faithful) */
+  --stripe:             #635BFF;
+  --hubspot:            #FF7A59;
+
+  color-scheme: dark;
+}
+
+/* ---------- LIGHT ---------- */
+:root[data-theme="light"] {
+  --bg:                 #F1F6FF;
+  --bg-elev-1:          #FFFFFF;
+  --bg-elev-2:          #F6F9FF;
+  --bg-elev-3:          #ECF1FB;
+  --bg-brand-tint:      rgba(2, 65, 227, 0.05);
+  --bg-brand-tint-strong:rgba(2, 65, 227, 0.10);
+
+  --text-primary:       #010258;
+  --text-secondary:     #2A3866;
+  --text-tertiary:      #5A6A95;
+  --text-muted:         #8A98BA;
+
+  --brand:              #0241E3;
+  --primary:            #0241E3;
+  --primary-hover:      #0137C4;
+  --primary-press:      #012AA3;
+  --primary-soft:       rgba(2, 65, 227, 0.10);
+  --primary-soft-strong:rgba(2, 65, 227, 0.18);
+
+  --success:            #16A34A;
+  --success-soft:       #DCFCE7;
+  --warning:            #D97706;
+  --warning-soft:       #FEF3C7;
+  --danger:             #DC2626;
+  --danger-soft:        #FEE2E2;
+  --info:               #0241E3;
+  --info-soft:          #DBE7FF;
+
+  --border:             #E2E8F4;
+  --border-strong:      #C9D3E8;
+  --border-brand:       rgba(2, 65, 227, 0.32);
+
+  --shadow-sm:  0 1px 2px rgba(1, 2, 88, 0.06);
+  --shadow-md:  0 4px 12px rgba(1, 2, 88, 0.08);
+  --shadow-lg:  0 16px 40px rgba(1, 2, 88, 0.12);
+  --shadow-glow:0 0 0 4px rgba(2, 65, 227, 0.18);
+
+  color-scheme: light;
+}
+
+/* ---------- SHARED ---------- */
+:root {
+  --radius-sm:    6px;
+  --radius-md:    10px;
+  --radius-lg:    14px;
+  --radius-xl:    18px;
+  --radius-2xl:   24px;
+  --radius-pill:  9999px;
+
+  --font-sans:  'Outfit', system-ui, -apple-system, sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --sidebar-w:  248px;
+  --header-h:   64px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  min-height: 100vh;
+  overflow: hidden;     /* prototype shell never scrolls */
+}
+::selection { background: var(--primary-soft-strong); color: var(--text-primary); }
+
+/* Page background ambient brand glow (dark only) */
+:root[data-theme="dark"] body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(900px 500px at 85% -8%, rgba(2, 65, 227, 0.18), transparent 60%),
+    radial-gradient(700px 400px at -8% 100%, rgba(1, 2, 88, 0.45), transparent 60%);
+}
+
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Common UI atoms ---------- */
+.t-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.t-micro { font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.t-small { font-size: 13px; color: var(--text-tertiary); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 14px;
+  border-radius: var(--radius-md);
+  font-weight: 500; font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  transition: all 140ms ease-out;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-elev-3); border-color: var(--border-strong); }
+.btn-primary {
+  background: var(--primary); color: #fff; border-color: transparent;
+}
+:root[data-theme="dark"] .btn-primary { color: #050B1F; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--bg-elev-2); color: var(--text-primary); }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: var(--radius-sm); }
+.btn-icon { width: 36px; padding: 0; justify-content: center; }
+.btn-icon.btn-sm { width: 28px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px; font-weight: 500;
+  background: var(--bg-elev-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge-success { color: var(--success); background: var(--success-soft); border-color: transparent; }
+.badge-warning { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+.badge-danger  { color: var(--danger);  background: var(--danger-soft);  border-color: transparent; }
+.badge-brand   { color: var(--primary); background: var(--primary-soft); border-color: transparent; }
+
+.card {
+  background: var(--bg-elev-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-sm);
+}
+
+.kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 5px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* Scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: content-box; border: 2px solid transparent; }
+
+/* Stripe/HubSpot brand swatches (locked colors) */
+.brand-stripe { color: #635BFF; }
+.brand-hubspot { color: #FF7A59; }

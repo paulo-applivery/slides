@@ -34,3 +34,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local SQLite (dev only — Cloudflare D1 in prod)
+/dev.db
+/dev.db-shm
+/dev.db-wal
+
+# Cloudflare local state
+/.wrangler/

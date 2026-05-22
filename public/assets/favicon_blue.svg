@@ -1,0 +1,23 @@
+<svg width="288" height="288" viewBox="0 0 288 288" fill="none" xmlns="http://www.w3.org/2000/svg">
+<mask id="mask0_80_20940" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="288" height="288">
+<circle cx="144" cy="144" r="144" fill="#C4C4C4"></circle>
+</mask>
+<g mask="url(#mask0_80_20940)">
+<rect width="432" height="432" transform="translate(-72 -72)" fill="#0241E3"></rect>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M144.012 73.0235L156.9 98.5442L156.888 98.5679L216 215.615L186.573 208.389L144 124.089L101.427 208.389L72 215.615L131.111 98.5679L131.1 98.5442L143.988 73.0235L144 73L144.012 73.0235Z" fill="white"></path>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M144.04 153.275L164.099 192.855L143.978 188.022L123.858 192.855L144.034 153.275L144.037 153.269L144.04 153.275Z" fill="white"></path>
+<g clip-path="url(#clip0_80_20940)">
+<rect x="-72" y="-72" width="432" height="432" fill="url(#paint0_radial_80_20940)"></rect>
+</g>
+</g>
+<defs>
+<radialGradient id="paint0_radial_80_20940" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(42 42) rotate(45) scale(288.5)">
+<stop stop-color="white" stop-opacity="0.1"></stop>
+<stop offset="0.319968" stop-color="white" stop-opacity="0.05"></stop>
+<stop offset="1" stop-color="white" stop-opacity="0"></stop>
+</radialGradient>
+<clipPath id="clip0_80_20940">
+<rect width="432" height="432" fill="white" transform="translate(-72 -72)"></rect>
+</clipPath>
+</defs>
+</svg>

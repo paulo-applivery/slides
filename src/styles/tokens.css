@@ -1,0 +1,314 @@
+/* =============================================================
+   APPLIVERY SLIDES — Design system tokens
+   Light is canonical; dark is the TV adaptation.
+   Mirrors implementation-plan/design-system.md.
+   ============================================================= */
+
+/* ---------- LIGHT (canonical, default) ---------- */
+:root, :root[data-theme="light"] {
+  /* Surfaces */
+  --bg:                 #FFFFFF;
+  --bg-canvas:          #F1F6FF;
+  --bg-elev-1:          #FFFFFF;
+  --bg-elev-2:          #F6F9FF;
+  --bg-elev-3:          #ECF1FB;
+  --canvas:             #F1F6FF;
+  --bg-brand-tint:      rgba(2, 65, 227, 0.05);
+  --bg-brand-tint-strong: rgba(2, 65, 227, 0.10);
+
+  /* Text */
+  --text-primary:       #010258;
+  --text-secondary:     #2A3866;
+  --text-tertiary:      #5A6A95;
+  --text-muted:         #8A98BA;
+
+  /* Primary scale */
+  --primary-50:  #EEF4FF;
+  --primary-100: #DBE7FF;
+  --primary-200: #B8CFFF;
+  --primary-300: #8AAEFF;
+  --primary-400: #5C8BFF;
+  --primary-500: #2D67F2;
+  --primary-600: #0241E3;
+  --primary-700: #0137C4;
+  --primary-800: #012AA3;
+  --primary-900: #010258;
+
+  --brand:              #0241E3;
+  --primary:            #0241E3;
+  --primary-hover:      #0137C4;
+  --primary-press:      #012AA3;
+  --primary-soft:       rgba(2, 65, 227, 0.10);
+  --primary-soft-strong:rgba(2, 65, 227, 0.18);
+  --primary-tint:       rgba(2, 65, 227, 0.05);
+
+  /* Navy scale */
+  --navy-50:  #F1F6FF;
+  --navy-100: #E2E8F4;
+  --navy-200: #C9D3E8;
+  --navy-300: #A8B5D3;
+  --navy-400: #8A98BA;
+  --navy-500: #5A6A95;
+  --navy-600: #2A3866;
+  --navy-700: #1A2552;
+  --navy-800: #0B1638;
+  --navy-900: #010258;
+
+  --secondary:          #010258;
+  --secondary-soft:     rgba(1, 2, 88, 0.08);
+
+  /* Accent scale */
+  --accent-50:  #E5ECFC;
+  --accent-100: #CCDAFA;
+  --accent-200: #99B5F6;
+  --accent-300: #6691F1;
+  --accent-400: #336CED;
+  --accent-500: #0241E3;
+  --accent-600: #0237C2;
+  --accent-700: #022D9F;
+  --accent-800: #02227C;
+  --accent-900: #011759;
+
+  --accent:             #0237C2;
+  --accent-light:       #6691F1;
+
+  /* Semantic */
+  --success:            #16A34A;
+  --success-soft:       #DCFCE7;
+  --warning:            #D97706;
+  --warning-soft:       #FEF3C7;
+  --danger:             #DC2626;
+  --danger-soft:        #FEE2E2;
+  --info:               #0241E3;
+  --info-soft:          #DBE7FF;
+
+  /* Borders */
+  --border:             #E2E8F4;
+  --border-strong:      #C9D3E8;
+  --border-brand:       rgba(2, 65, 227, 0.32);
+
+  /* Shadows — navy-tinted, never gray */
+  --shadow-sm:  0 1px 2px rgba(1, 2, 88, 0.06);
+  --shadow-md:  0 4px 12px rgba(1, 2, 88, 0.08);
+  --shadow-lg:  0 16px 40px rgba(1, 2, 88, 0.12);
+  --shadow-glow:0 0 0 4px rgba(2, 65, 227, 0.18);
+
+  /* Partner brand colors (locked) */
+  --stripe:             #635BFF;
+  --hubspot:            #FF7A59;
+
+  color-scheme: light;
+}
+
+/* ---------- DARK (TV adaptation) ---------- */
+:root[data-theme="dark"] {
+  --bg:                 #050B1F;
+  --bg-canvas:          #050B1F;
+  --bg-elev-1:          #0B1224;
+  --bg-elev-2:          #131C36;
+  --bg-elev-3:          #1B2647;
+  --canvas:             #050B1F;
+  --bg-brand-tint:      rgba(92, 139, 255, 0.08);
+  --bg-brand-tint-strong: rgba(92, 139, 255, 0.16);
+
+  --text-primary:       #F1F6FF;
+  --text-secondary:     #C2CDE8;
+  --text-tertiary:      #8A98BA;
+  --text-muted:         #6A7898;
+
+  --brand:              #0241E3;        /* canonical brand — used for glows / fills */
+  --primary:            #5C8BFF;        /* AA on dark for text/strokes */
+  --primary-hover:      #82A6FF;
+  --primary-press:      #3F6FE8;
+  --primary-soft:       rgba(92, 139, 255, 0.12);
+  --primary-soft-strong:rgba(92, 139, 255, 0.22);
+
+  --accent:             #6691F1;
+  --accent-light:       #8AAEFF;
+
+  --success:            #4ADE80;
+  --success-soft:       rgba(74, 222, 128, 0.12);
+  --warning:            #FBBF24;
+  --warning-soft:       rgba(251, 191, 36, 0.12);
+  --danger:             #F87171;
+  --danger-soft:        rgba(248, 113, 113, 0.12);
+  --info:               #60A5FA;
+  --info-soft:          rgba(96, 165, 250, 0.12);
+
+  --border:             rgba(255, 255, 255, 0.08);
+  --border-strong:      rgba(255, 255, 255, 0.14);
+  --border-brand:       rgba(92, 139, 255, 0.32);
+
+  --shadow-sm:  0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md:  0 8px 24px rgba(0,0,0,0.35), 0 0 0 1px var(--border);
+  --shadow-lg:  0 24px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--border);
+  --shadow-glow:0 0 0 4px rgba(92, 139, 255, 0.18);
+
+  color-scheme: dark;
+}
+
+/* ---------- SHARED ---------- */
+:root {
+  /* Radii */
+  --radius-xs:    4px;
+  --radius-sm:    6px;
+  --radius-md:    10px;
+  --radius-lg:    14px;
+  --radius-xl:    18px;
+  --radius-2xl:   24px;
+  --radius-3xl:   32px;
+  --radius-pill:  9999px;
+  --radius-card:   var(--radius-2xl);
+  --radius-button: var(--radius-md);
+  --radius-input:  var(--radius-md);
+
+  /* Spacing (4-pt) */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Type — Outfit is the single typeface across the entire surface.
+     `--font-mono` resolves to the same family; `.t-mono` adds
+     `font-variant-numeric: tabular-nums` so number columns still align. */
+  --font-sans:  var(--font-outfit), 'Outfit', system-ui, -apple-system, sans-serif;
+  --font-mono:  var(--font-outfit), 'Outfit', system-ui, -apple-system, sans-serif;
+
+  /* Design-system canonical scale — chrome (sidebar, topbar, buttons,
+     forms) uses these sizes. Widget content + TV slides have their own
+     scoped overrides for cross-room readability. */
+  --fs-display: 56px;
+  --fs-h1:      40px;
+  --fs-h2:      28px;
+  --fs-h3:      20px;
+  --fs-h4:      17px;
+  --fs-body:    15px;
+  --fs-small:   13px;
+  --fs-micro:   11px;
+
+  --lh-tight:   1.15;
+  --lh-snug:    1.35;
+  --lh-normal:  1.55;
+  --lh-relaxed: 1.7;
+
+  --fw-light:    300;
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+
+  /* Shell */
+  --sidebar-w:  280px;
+  --header-h:   64px;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--primary-soft-strong); color: var(--text-primary); }
+
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+input, select, textarea { font: inherit; color: inherit; }
+
+/* ---------- Semantic role classes (per design-system.md §3.4) ---------- */
+.t-display { font-weight: var(--fw-medium); font-size: var(--fs-display); line-height: var(--lh-tight); letter-spacing: -0.025em; color: var(--text-primary); }
+.t-h1      { font-weight: var(--fw-medium); font-size: var(--fs-h1);      line-height: var(--lh-tight); letter-spacing: -0.02em;  color: var(--text-primary); }
+.t-h2      { font-weight: var(--fw-medium); font-size: var(--fs-h2);      line-height: var(--lh-snug);  letter-spacing: -0.01em;  color: var(--text-primary); }
+.t-h3      { font-weight: var(--fw-medium); font-size: var(--fs-h3);      line-height: var(--lh-snug);  color: var(--text-primary); }
+.t-h4      { font-weight: var(--fw-medium); font-size: var(--fs-h4);      line-height: var(--lh-snug);  color: var(--text-primary); }
+.t-body    { font-weight: var(--fw-regular); font-size: var(--fs-body);    line-height: var(--lh-normal); color: var(--text-secondary); }
+.t-small   { font-weight: var(--fw-regular); font-size: var(--fs-small);   line-height: var(--lh-normal); color: var(--text-tertiary); }
+.t-micro   { font-weight: var(--fw-medium);  font-size: var(--fs-micro);   line-height: var(--lh-tight); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.t-mono    { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- Common UI atoms ---------- */
+/* Buttons — sizes track the prototype (36px default).
+   The "lg" variant exists for hero CTAs and matches the spec's 40px. */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 14px;
+  border-radius: var(--radius-button);
+  font-weight: var(--fw-medium); font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  transition: all 140ms ease-out;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-elev-3); border-color: var(--border-strong); }
+.btn:focus-visible { outline: none; box-shadow: var(--shadow-glow); }
+.btn-primary {
+  background: var(--primary); color: #fff; border-color: transparent;
+}
+:root[data-theme="dark"] .btn-primary { color: #050B1F; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary:active { background: var(--primary-press); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--bg-elev-2); color: var(--text-primary); }
+.btn-danger { background: var(--danger); color: #fff; border-color: transparent; }
+.btn-lg { height: 40px; padding: 0 16px; font-size: 15px; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: var(--radius-sm); }
+.btn-icon { width: 36px; padding: 0; justify-content: center; }
+.btn-icon.btn-sm { width: 28px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px; font-weight: var(--fw-medium);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  background: var(--bg-elev-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge-success { color: var(--success); background: var(--success-soft); border-color: transparent; }
+.badge-warning { color: var(--warning); background: var(--warning-soft); border-color: transparent; }
+.badge-danger  { color: var(--danger);  background: var(--danger-soft);  border-color: transparent; }
+.badge-brand   { color: var(--primary); background: var(--primary-soft); border-color: transparent; }
+
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+  padding: 24px;
+}
+.card-emphasized {
+  border-color: var(--border-brand);
+  box-shadow: var(--shadow-md);
+}
+
+.kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 5px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* Scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--border-strong); background-clip: content-box; border: 2px solid transparent; }
+
+/* Stripe/HubSpot brand swatches (locked colors) */
+.brand-stripe { color: var(--stripe); }
+.brand-hubspot { color: var(--hubspot); }

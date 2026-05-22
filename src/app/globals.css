@@ -1,27 +1,13 @@
+/* Tailwind base — kept minimal; the design system tokens drive everything.
+   Order matters: tokens → app shell → screens → tailwind utilities last. */
+
+@import "../styles/tokens.css";
+@import "../styles/app.css";
+@import "../styles/screens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
+/* Page-level utilities consumed across screens. */
+.tb-divider { display: inline-block; }

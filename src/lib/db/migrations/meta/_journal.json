@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1779310633171,
+      "tag": "0000_blushing_annihilus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1779395170624,
+      "tag": "0001_superb_captain_stacy",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779396358498,
+      "tag": "0002_broken_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1779397384471,
+      "tag": "0003_right_jazinda",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1779400111209,
+      "tag": "0004_safe_randall",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1779401542527,
+      "tag": "0005_broken_mandrill",
+      "breakpoints": true
+    }
+  ]
+}

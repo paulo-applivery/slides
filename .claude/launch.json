@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "Postgres (Docker)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "postgres"],
+      "port": 5433,
+      "autoPort": false
+    },
+    {
+      "name": "Drizzle Studio",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["db:studio"],
+      "port": 4983,
+      "autoPort": false
+    }
+  ]
+}

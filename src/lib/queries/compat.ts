@@ -1,0 +1,130 @@
+/**
+ * Widget ↔ query-kind compatibility map + adapters.
+ *
+ * Used by:
+ *  - the query picker on the dashboard, to filter saved queries to ones a
+ *    given widget can render
+ *  - the dashboard renderer, to translate executor results into widget props
+ */
+import type { QueryKind } from "./ast";
+import type { ExecutorResult } from "./executor";
+import type {
+  BarDatum,
+  FunnelStage,
+  Rep,
+} from "@/components/widgets/types";
+
+export type WidgetType =
+  | "singleValue"
+  | "gauge"
+  | "bar"
+  | "funnel"
+  | "ranking";
+
+/** Which executor kinds a widget can consume. */
+export const WIDGET_ACCEPTS: Record<WidgetType, QueryKind[]> = {
+  singleValue: ["single"],
+  gauge: ["single"],
+  bar: ["timeseries"],
+  funnel: [],
+  ranking: ["groupby"],
+};
+
+export function isCompatible(widget: WidgetType, kind: QueryKind): boolean {
+  return WIDGET_ACCEPTS[widget].includes(kind);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adapters — executor result → widget props
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** EUR-cents need /100 to display in euros; everything else passes through. */
+function scaleForUnit(v: number, unit: ExecutorResult["formatter"]): number {
+  return unit === "EUR-cents" ? v / 100 : v;
+}
+
+export type SingleValueProps = {
+  value: number;
+  delta: number;
+  deltaPct: number;
+  spark: number[];
+  unit: "€" | "%" | "#";
+};
+
+/**
+ * Map a single-result to the SingleValue widget. We don't have a delta or
+ * sparkline without a previous-period pass yet — set them to neutral so the
+ * widget still renders.
+ */
+export function adaptSingleValue(res: Extract<ExecutorResult, { kind: "single" }>): SingleValueProps {
+  const value = scaleForUnit(res.value ?? 0, res.formatter);
+  const unit: "€" | "%" | "#" =
+    res.formatter === "EUR" || res.formatter === "EUR-cents"
+      ? "€"
+      : res.formatter === "percent"
+        ? "%"
+        : "#";
+  return {
+    value,
+    delta: 0,
+    deltaPct: 0,
+    spark: [value, value],
+    unit,
+  };
+}
+
+export type GaugeProps = {
+  value: number;
+  target: number;
+};
+
+/** Gauge target lives on the widget's display config; default 100_000. */
+export function adaptGauge(
+  res: Extract<ExecutorResult, { kind: "single" }>,
+  display: { target?: number } | undefined,
+): GaugeProps {
+  return {
+    value: scaleForUnit(res.value ?? 0, res.formatter),
+    target: display?.target ?? 100_000,
+  };
+}
+
+export function adaptBar(
+  res: Extract<ExecutorResult, { kind: "timeseries" }>,
+): BarDatum[] {
+  return res.points.map((p) => ({
+    label: p.label,
+    value: scaleForUnit(p.value, res.formatter),
+    prev: p.prev != null ? scaleForUnit(p.prev, res.formatter) : undefined,
+  }));
+}
+
+export function adaptRanking(
+  res: Extract<ExecutorResult, { kind: "groupby" }>,
+): Rep[] {
+  const max = Math.max(...res.rows.map((r) => r.value), 0);
+  const palette = ["#5C8BFF", "#FBBF24", "#4ADE80", "#F87171", "#A855F7", "#2DD4BF", "#FB7185"];
+  return res.rows.map((r, i) => {
+    const name = r.label ?? r.key ?? "—";
+    const initials = name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() ?? "")
+      .join("") || "?";
+    const value = scaleForUnit(r.value, res.formatter);
+    return {
+      id: r.key + i,
+      name,
+      initials,
+      color: palette[i % palette.length],
+      value,
+      target: max > 0 ? max : 1,
+      delta: 0,
+    };
+  });
+}
+
+/** Funnel isn't query-bound in slice 1; SEED is the only source. */
+export function adaptFunnel(): FunnelStage[] | null {
+  return null;
+}
