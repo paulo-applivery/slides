@@ -13,8 +13,11 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   ne,
+  not,
   sql,
   type SQL,
   type Column,
@@ -39,7 +42,7 @@ import {
 } from "date-fns";
 import { db } from "@/lib/db";
 import { fmtEUR, fmtInt, fmtPct } from "@/lib/format";
-import { hubspotOwners } from "@/lib/db/schema";
+import { hubspotContacts, hubspotDeals, hubspotOwners } from "@/lib/db/schema";
 import {
   METRICS_BY_ID,
   type Aggregation,
@@ -139,6 +142,33 @@ function aggregationExpr(
   if (!metric.column) {
     throw new Error(`Metric ${metric.id} requires a column for ${agg}.`);
   }
+
+  // Custom-field sentinel: column = "custom:<propName>". Build a
+  // CAST(json_extract(custom_properties, '$.<propName>') AS REAL)
+  // expression so the aggregation runs over JSON-stored numbers.
+  if (metric.column.startsWith("custom:")) {
+    const propName = metric.column.slice("custom:".length);
+    const jsonCol = table.customProperties as Column | undefined;
+    if (!jsonCol) {
+      throw new Error(
+        `Custom aggregation needs custom_properties on table for metric ${metric.id}.`,
+      );
+    }
+    const numExpr = sql<number>`CAST(json_extract(${jsonCol}, ${"$." + propName}) AS REAL)`;
+    switch (agg) {
+      case "sum":
+        return sql<number>`COALESCE(SUM(${numExpr}), 0)`;
+      case "avg":
+        return sql<number>`COALESCE(AVG(${numExpr}), 0)`;
+      case "min":
+        return sql<number>`COALESCE(MIN(${numExpr}), 0)`;
+      case "max":
+        return sql<number>`COALESCE(MAX(${numExpr}), 0)`;
+      case "count_distinct":
+        return sql<number>`COUNT(DISTINCT json_extract(${jsonCol}, ${"$." + propName}))`;
+    }
+  }
+
   const col = table[metric.column] as Column | undefined;
   if (!col) {
     throw new Error(`Column ${metric.column} not found on metric table.`);
@@ -151,12 +181,22 @@ function aggregationExpr(
         : sql<number>`COALESCE(SUM(${col}), 0)`;
     case "avg":
       return sql<number>`COALESCE(AVG(${col}), 0)`;
+    case "min":
+      return sql<number>`COALESCE(MIN(${col}), 0)`;
+    case "max":
+      return sql<number>`COALESCE(MAX(${col}), 0)`;
     case "count_distinct":
       return sql<number>`COUNT(DISTINCT ${col})`;
   }
 }
 
 function coerce(value: Filter["value"]): unknown {
+  // Unary operators (known / unknown) never reach this path — but guard
+  // anyway so a malformed binary filter throws a clean error rather than
+  // a NPE downstream.
+  if (value === undefined) {
+    throw new Error("Filter value is required for this operator.");
+  }
   if (Array.isArray(value)) return value.map((v) => coerceScalar(v));
   return coerceScalar(value as string | number | boolean);
 }
@@ -175,10 +215,51 @@ function compileFilter(
   table: Record<string, unknown>,
   f: Filter,
 ): SQL | undefined {
+  // Custom-field path: the wizard encodes JSON-backed fields as
+  // `custom:propName`. We resolve to a `json_extract(custom_properties,
+  // '$.propName')` expression and run the operator against that.
+  if (f.field.startsWith("custom:")) {
+    const propName = f.field.slice("custom:".length);
+    const jsonCol = table.customProperties as SQLiteColumn | undefined;
+    if (!jsonCol) {
+      throw new Error(
+        `Custom field "${propName}" requested but metric "${metric.id}" has no custom_properties column.`,
+      );
+    }
+    const expr = sql`json_extract(${jsonCol}, ${"$." + propName})`;
+    if (f.op === "known") return sql`${expr} IS NOT NULL`;
+    if (f.op === "unknown") return sql`${expr} IS NULL`;
+    const v = coerce(f.value);
+    switch (f.op) {
+      case "eq":
+        return sql`${expr} = ${v}`;
+      case "neq":
+        return sql`${expr} != ${v}`;
+      case "gte":
+        return sql`CAST(${expr} AS REAL) >= ${v}`;
+      case "lte":
+        return sql`CAST(${expr} AS REAL) <= ${v}`;
+      case "in":
+        if (!Array.isArray(v)) {
+          throw new Error(`Filter "${f.field}" op=in requires an array value.`);
+        }
+        return sql`${expr} IN ${v}`;
+      case "nin":
+        if (!Array.isArray(v)) {
+          throw new Error(`Filter "${f.field}" op=nin requires an array value.`);
+        }
+        return sql`${expr} NOT IN ${v}`;
+    }
+  }
+
+  // Standard column path.
   const col = table[f.field] as SQLiteColumn | undefined;
   if (!col) {
     throw new Error(`Filter field "${f.field}" not on metric "${metric.id}".`);
   }
+  if (f.op === "known") return isNotNull(col);
+  if (f.op === "unknown") return isNull(col);
+
   const v = coerce(f.value);
   switch (f.op) {
     case "eq":
@@ -194,6 +275,11 @@ function compileFilter(
         throw new Error(`Filter "${f.field}" op=in requires an array value.`);
       }
       return inArray(col, v as never[]);
+    case "nin":
+      if (!Array.isArray(v)) {
+        throw new Error(`Filter "${f.field}" op=nin requires an array value.`);
+      }
+      return not(inArray(col, v as never[]));
   }
 }
 
@@ -227,16 +313,20 @@ function bucketExpression(dateCol: SQLiteColumn, bucket: Bucket): SQL<string> {
 async function runSingle(
   workspaceId: string,
   config: SingleQuery,
+  opts: RunQueryOptions = {},
 ): Promise<ExecutorResult> {
   const metric = resolveMetric(config.metric, config.source);
   const table = metric.table as unknown as Record<string, unknown>;
   const workspaceCol = table.workspaceId as SQLiteColumn;
-  const dateCol = table[metric.dateField] as SQLiteColumn | undefined;
+  const dateFieldName = config.dateField ?? metric.dateField;
+  const dateCol = resolveDateColumn(table, dateFieldName) as SQLiteColumn | undefined;
   if (!dateCol) {
-    throw new Error(`Date column ${metric.dateField} missing on metric table.`);
+    throw new Error(`Date column ${dateFieldName} missing on metric table.`);
   }
 
-  const window = rangeToWindow(config.dateRange);
+  // Widget-level time-period override beats the query's own dateRange.
+  // See `RunQueryOptions.dateOverride` for the contract.
+  const window = opts.dateOverride ?? rangeToWindow(config.dateRange);
   const conditions: SQL[] = [eq(workspaceCol, workspaceId)];
   if (window.from) conditions.push(gte(dateCol, window.from));
   if (window.to) conditions.push(lt(dateCol, window.to));
@@ -269,16 +359,18 @@ async function runSingle(
 async function runTimeseries(
   workspaceId: string,
   config: TimeseriesQuery,
+  opts: RunQueryOptions = {},
 ): Promise<ExecutorResult> {
   const metric = resolveMetric(config.metric, config.source);
   const table = metric.table as unknown as Record<string, unknown>;
   const workspaceCol = table.workspaceId as SQLiteColumn;
-  const dateCol = table[metric.dateField] as SQLiteColumn | undefined;
+  const dateFieldName = config.dateField ?? metric.dateField;
+  const dateCol = resolveDateColumn(table, dateFieldName) as SQLiteColumn | undefined;
   if (!dateCol) {
-    throw new Error(`Date column ${metric.dateField} missing on metric table.`);
+    throw new Error(`Date column ${dateFieldName} missing on metric table.`);
   }
 
-  const window = rangeToWindow(config.dateRange);
+  const window = opts.dateOverride ?? rangeToWindow(config.dateRange);
   const start = performance.now();
   const current = await fetchBucketRows(workspaceId, metric, table, workspaceCol, dateCol, window, config);
 
@@ -347,13 +439,15 @@ async function fetchBucketRows(
 async function runGroupBy(
   workspaceId: string,
   config: GroupByQuery,
+  opts: RunQueryOptions = {},
 ): Promise<ExecutorResult> {
   const metric = resolveMetric(config.metric, config.source);
   const table = metric.table as unknown as Record<string, unknown>;
   const workspaceCol = table.workspaceId as SQLiteColumn;
-  const dateCol = table[metric.dateField] as SQLiteColumn | undefined;
+  const dateFieldName = config.dateField ?? metric.dateField;
+  const dateCol = resolveDateColumn(table, dateFieldName) as SQLiteColumn | undefined;
   if (!dateCol) {
-    throw new Error(`Date column ${metric.dateField} missing on metric table.`);
+    throw new Error(`Date column ${dateFieldName} missing on metric table.`);
   }
   const groupCol = table[config.groupBy] as SQLiteColumn | undefined;
   if (!groupCol) {
@@ -362,7 +456,7 @@ async function runGroupBy(
     );
   }
 
-  const window = rangeToWindow(config.dateRange);
+  const window = opts.dateOverride ?? rangeToWindow(config.dateRange);
   const conditions: SQL[] = [eq(workspaceCol, workspaceId)];
   if (window.from) conditions.push(gte(dateCol, window.from));
   if (window.to) conditions.push(lt(dateCol, window.to));
@@ -434,12 +528,81 @@ async function runGroupBy(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function resolveMetric(id: string, source: string): MetricDef {
+  // Synthetic metric for custom-field aggregations. Format:
+  //   `__custom:<source>:<object>:<aggregation>:<fieldName>`
+  // e.g. `__custom:hubspot:deals:sum:annual_recurring_revenue`
+  //
+  // The wizard mints these for custom numeric fields the operator
+  // picked in /integrations. We resolve to a MetricDef on the fly
+  // pointing at the right mirror table; `column` is a sentinel
+  // (`custom:<fieldName>`) that compileAgg + filter both special-case.
+  if (id.startsWith("__custom:")) {
+    return buildCustomMetric(id);
+  }
   const metric = METRICS_BY_ID.get(id);
   if (!metric) throw new Error(`Unknown metric: ${id}`);
   if (metric.source !== source) {
     throw new Error(`Metric "${id}" is not from source "${source}".`);
   }
   return metric;
+}
+
+/**
+ * Resolve a date-field name to a SQL expression usable in WHERE / GROUP BY.
+ *
+ * Standard names map to the matching Drizzle column. Custom-field names
+ * are encoded as `custom:propName` and resolve to a
+ * `datetime(json_extract(custom_properties, '$.propName'))` expression
+ * so range filtering still works on JSON-stored ISO timestamps.
+ */
+function resolveDateColumn(
+  table: Record<string, unknown>,
+  name: string,
+): unknown {
+  if (name.startsWith("custom:")) {
+    const propName = name.slice("custom:".length);
+    const jsonCol = table.customProperties as SQLiteColumn | undefined;
+    if (!jsonCol) return undefined;
+    // Wrap in `datetime(...)` so SQLite parses HubSpot's ISO 8601
+    // string and supports the same `>=` / `<` comparators we use
+    // against the real timestamp columns.
+    return sql`datetime(json_extract(${jsonCol}, ${"$." + propName}))`;
+  }
+  return table[name];
+}
+
+function buildCustomMetric(id: string): MetricDef {
+  const [, src, obj, agg, ...rest] = id.split(":");
+  const fieldName = rest.join(":"); // tolerate ':' in property names
+  if (!src || !obj || !agg || !fieldName) {
+    throw new Error(`Malformed custom metric id: ${id}`);
+  }
+  if (src !== "hubspot") {
+    throw new Error(`Custom aggregation not supported for source "${src}" yet.`);
+  }
+  if (
+    agg !== "sum" &&
+    agg !== "avg" &&
+    agg !== "min" &&
+    agg !== "max" &&
+    agg !== "count"
+  ) {
+    throw new Error(`Custom aggregation "${agg}" is not supported.`);
+  }
+  return {
+    id,
+    source: "hubspot",
+    label: `Custom · ${fieldName}`,
+    description: `Operator-defined HubSpot ${obj} property aggregated as ${agg}.`,
+    table: obj === "deals" ? hubspotDeals : hubspotContacts,
+    // Sentinel — compileAgg checks for the prefix and emits a
+    // CAST(json_extract(custom_properties, '$.fieldName') AS REAL)
+    // expression instead of selecting the column directly.
+    column: `custom:${fieldName}`,
+    aggregation: agg as Aggregation,
+    unit: agg === "count" ? "count" : "EUR",
+    dateField: obj === "deals" ? "closeDate" : "createdAt",
+  };
 }
 
 export function formatScalar(metric: { unit: FormatterKind }, raw: number): string {
@@ -460,18 +623,29 @@ export function formatScalar(metric: { unit: FormatterKind }, raw: number): stri
 // Entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
+export type RunQueryOptions = {
+  /**
+   * Per-widget date-window override. Takes precedence over the query's
+   * `dateRange` when present — used when a widget has its own
+   * `display.timePeriod` (e.g. one tile shows "Current Month" while
+   * the rest of the dashboard follows whatever the queries default to).
+   */
+  dateOverride?: { from: Date | null; to: Date | null };
+};
+
 export async function runQuery(
   workspaceId: string,
   rawConfig: QueryConfig,
+  opts: RunQueryOptions = {},
 ): Promise<ExecutorResult> {
   const config = queryConfigSchema.parse(rawConfig);
   switch (config.kind) {
     case "single":
-      return runSingle(workspaceId, config);
+      return runSingle(workspaceId, config, opts);
     case "timeseries":
-      return runTimeseries(workspaceId, config);
+      return runTimeseries(workspaceId, config, opts);
     case "groupby":
-      return runGroupBy(workspaceId, config);
+      return runGroupBy(workspaceId, config, opts);
   }
 }
 

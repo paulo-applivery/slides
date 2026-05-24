@@ -18,32 +18,23 @@ import {
   WIDGET_ACCEPTS,
   type WidgetType,
 } from "@/lib/queries/compat";
-import {
-  headlineFromResult,
-  headlineFromSeed,
-  type Headline,
-} from "@/lib/queries/headline";
 import type { DashboardLayout } from "@/lib/db/schema";
 import type { TvWidgetResult } from "@/app/api/tv/data/route";
+
+import type { WidgetChip } from "@/components/dashboard/widgetChip";
 
 type WidgetDisplay = {
   title?: string;
   titleSize?: number;
-  subtitle?: string;
-  headlineCaption?: string;
+  titleAlign?: "left" | "center" | "right";
+  chip?: WidgetChip;
 };
 
 /**
- * TV-scale layout-driven dashboard slide.
- *
- * Iterates `dashboard.layout.widgets` and renders each widget using its
- * pre-fetched executor result (live data from `/api/tv/data`). Unbound or
- * errored widgets fall back to SEED with a Demo pill so the slide always
- * looks complete.
- *
- * Same `.dash-grid` + `.col-N` chrome as the in-app dashboard; CSS overrides
- * in app.css bump widget heights at TV breakpoints so the numbers read from
- * across a room.
+ * Layout-driven TV slide. Renders every widget in the dashboard layout
+ * as **title + chart only**, fitted to the screen via the same explicit
+ * grid placement as the in-app editor. No badges, no headline numbers,
+ * no footers — broadcast clean.
  */
 export function TVDashboardSlide({
   dashboard,
@@ -72,12 +63,9 @@ export function TVDashboardSlide({
     );
   }
 
-  // The TV slide has a finite height. We use explicit row + column
-  // placement so the dashboard always fits the screen, no matter how many
-  // widgets the layout contains. `grid-template-rows: repeat(N, 1fr)`
-  // means each row gets an equal fraction of available height — so
-  // adding more widgets shrinks every row proportionally; nothing falls
-  // off the bottom of the TV.
+  // Fit-to-screen: equal-fraction rows (`repeat(N, minmax(0, 1fr))`) so
+  // adding more widgets shrinks every row proportionally and nothing
+  // falls off the bottom of the TV.
   const totalRows = Math.max(
     1,
     ...widgets.map((w) => w.pos.y + w.pos.h),
@@ -88,18 +76,10 @@ export function TVDashboardSlide({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: 18,
         height: "100%",
         minHeight: 0,
       }}
     >
-      <div className="tv-eyebrow">
-        <span className="t-micro">{dashboard.name}</span>
-        <span className="badge badge-brand">
-          <span className="dot" />
-          Live
-        </span>
-      </div>
       <div
         className="dash-grid"
         style={{
@@ -149,54 +129,13 @@ function TvWidget({
   const display = (widget.display ?? {}) as WidgetDisplay;
   const title = display.title ?? humanType(widget.type);
 
-  // Hero number above Bar/Funnel/Ranking. Gauge + SingleValue carry it
-  // inside the chart already.
-  let headline: Headline | null = null;
-  if (widget.type === "bar" || widget.type === "funnel" || widget.type === "ranking") {
-    if (result?.kind === "ok") {
-      headline = headlineFromResult(widget.type, result.result);
-    }
-    if (!headline) headline = headlineFromSeed(widget.type);
-    if (headline && display.headlineCaption) {
-      headline = { ...headline, caption: display.headlineCaption };
-    }
-  }
-
   return (
     <WidgetShell
       title={title}
       titleSize={display.titleSize}
-      subtitle={
-        display.subtitle ?? (status === "live" ? "Live · query bound" : `${humanType(widget.type)} · demo`)
-      }
-      headline={headline?.value}
-      headlineCaption={headline?.caption}
+      titleAlign={display.titleAlign}
+      chip={display.chip}
       dragHandle={false}
-      action={
-        status === "demo" ? (
-          <span
-            className="badge"
-            title="Demo data — bind this widget to a saved query"
-            style={{
-              background: "var(--bg-elev-2)",
-              color: "var(--text-muted)",
-              letterSpacing: "0.06em",
-            }}
-          >
-            Demo
-          </span>
-        ) : status === "error" ? (
-          <span className="badge badge-danger">
-            <span className="dot" />
-            Error
-          </span>
-        ) : (
-          <span className="badge badge-success">
-            <span className="dot" />
-            Live
-          </span>
-        )
-      }
     >
       {renderInside(widget, result, status)}
     </WidgetShell>
@@ -275,7 +214,6 @@ function renderBound(
       if (res.kind !== "groupby") return null;
       return <RankingWidget reps={adaptRanking(res)} />;
     case "funnel":
-      // Funnel kind not in executor yet — show SEED until slice 6.
       return renderSeedFallback(widget);
   }
 }

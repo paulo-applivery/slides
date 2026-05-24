@@ -9,6 +9,8 @@ import { StripeConnectForm } from "@/components/integrations/StripeConnectForm";
 import { StripeActions } from "@/components/integrations/StripeActions";
 import { HubspotConnectForm } from "@/components/integrations/HubspotConnectForm";
 import { HubspotActions } from "@/components/integrations/HubspotActions";
+import { HubspotFieldsPanel } from "@/components/integrations/HubspotFieldsPanel";
+import { getHubspotFieldSelection } from "@/lib/integrations/hubspot";
 import { fmtInt } from "@/lib/format";
 
 /**
@@ -78,6 +80,13 @@ export default async function IntegrationsPage() {
             errorMessage={hubspot?.lastError?.message ?? null}
             connectSlot={editable ? <HubspotConnectForm /> : null}
             connectedActions={editable ? <HubspotActions /> : null}
+            extraSlot={
+              hubspot && editable ? (
+                <HubspotFieldsPanel
+                  initialSelection={getHubspotFieldSelection(hubspot)}
+                />
+              ) : null
+            }
           />
         </div>
       </main>
@@ -97,6 +106,7 @@ function IntegrationCard({
   errorMessage,
   connectSlot,
   connectedActions,
+  extraSlot,
 }: {
   brandColor: string;
   providerName: string;
@@ -109,6 +119,8 @@ function IntegrationCard({
   errorMessage: string | null;
   connectSlot: React.ReactNode;
   connectedActions: React.ReactNode;
+  /** Optional inline content rendered below the actions row — e.g. the HubSpot field-picker panel. */
+  extraSlot?: React.ReactNode;
 }) {
   return (
     <div
@@ -180,6 +192,7 @@ function IntegrationCard({
       <div style={{ display: "flex", justifyContent: connected ? "flex-end" : "flex-start" }}>
         {connected ? connectedActions : connectSlot}
       </div>
+      {extraSlot}
     </div>
   );
 }

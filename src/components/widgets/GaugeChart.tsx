@@ -56,8 +56,14 @@ export function GaugeChart({ value, target, showPill = true }: GaugeChartProps) 
   return (
     <div
       className="gauge"
+      // `width: auto` + `height: 100%` lets the gauge size from the
+      // smaller axis (the parent body uses flex column with center
+      // alignment + overflow:hidden), so it never overflows. The aspect
+      // ratio keeps the dial proportional.
       style={{
-        width: "100%",
+        height: "100%",
+        width: "auto",
+        maxWidth: "100%",
         aspectRatio: `${W} / ${H}`,
       }}
     >

@@ -165,6 +165,9 @@ export const Icons = {
     </Icon>
   ),
   Close: (p: IconComponentProps) => <Icon {...p} d="M18 6 6 18M6 6l12 12" />,
+  Edit: (p: IconComponentProps) => (
+    <Icon {...p} d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+  ),
   Check: (p: IconComponentProps) => <Icon {...p} d="m5 12 5 5 9-11" />,
   ChevronDown: (p: IconComponentProps) => <Icon {...p} d="m6 9 6 6 6-6" />,
   ChevronRight: (p: IconComponentProps) => <Icon {...p} d="m9 6 6 6-6 6" />,

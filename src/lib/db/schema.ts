@@ -184,6 +184,30 @@ export type IntegrationConfig = {
   stripeAccountId?: string;
   stripeMode?: "test" | "live";
   hubspotPortalId?: number;
+  /**
+   * HubSpot-only: which CRM properties the operator picked for queries.
+   *
+   * Stored as objects (not bare names) so the wizard and executor know
+   * the property's type without re-hitting HubSpot — a HubSpot `number`
+   * field warrants Sum/Avg aggregations, an `enumeration` doesn't.
+   *
+   * Legacy data (pre-custom-fields) where this is `string[]` is still
+   * read by `getHubspotFieldSelection` and lifted to the rich shape at
+   * read time.
+   */
+  selectedFields?: {
+    deals: HubspotPickedField[] | string[];
+    contacts: HubspotPickedField[] | string[];
+  };
+};
+
+export type HubspotPickedField = {
+  name: string;
+  label: string;
+  /** HubSpot's reported type — string, number, enumeration, datetime, bool. */
+  type: string;
+  /** Enumeration values (when the property is an enum). */
+  options?: Array<{ label: string; value: string }>;
 };
 
 export const integrations = sqliteTable(
@@ -464,6 +488,14 @@ export const hubspotDeals = sqliteTable(
     closeDate: integer("close_date", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+    /**
+     * Operator-picked HubSpot custom properties, JSON-encoded as a flat
+     * `{ propName: stringValue }` object. We keep all values as strings
+     * (HubSpot's own representation) so the executor can `json_extract`
+     * without a per-type unmarshal — typed comparisons live in the AST.
+     */
+    customProperties: text("custom_properties", { mode: "json" })
+      .$type<Record<string, string | null>>(),
     syncedAt: integer("synced_at", { mode: "timestamp" })
       .notNull()
       .$default(() => new Date()),
@@ -491,6 +523,9 @@ export const hubspotContacts = sqliteTable(
     /** lifecyclestage: subscriber → lead → marketingqualifiedlead → opportunity → customer */
     lifecycleStage: text("lifecycle_stage"),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    /** See `hubspotDeals.customProperties`. */
+    customProperties: text("custom_properties", { mode: "json" })
+      .$type<Record<string, string | null>>(),
     syncedAt: integer("synced_at", { mode: "timestamp" })
       .notNull()
       .$default(() => new Date()),

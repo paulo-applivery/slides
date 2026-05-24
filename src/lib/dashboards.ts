@@ -208,3 +208,145 @@ export async function bindWidget(
     ),
   }));
 }
+
+/**
+ * Patch a widget's `display` metadata — title, titleSize, and chip today;
+ * extensible for future operator-editable bits (period label, unit override,
+ * gauge target, etc.).
+ *
+ * Pass `null` for a field to clear it (e.g. `titleSize: null` reverts
+ * the title to the auto cqh-driven size; `chip: null` removes the chip
+ * entirely).
+ */
+export async function updateWidgetDisplay(
+  dashboardId: string,
+  widgetId: string,
+  patch: {
+    title?: string | null;
+    titleSize?: number | null;
+    /** "left" | "center" | "right". `null` reverts to the CSS default. */
+    titleAlign?: "left" | "center" | "right" | null;
+    chip?: {
+      icon?: string | null;
+      color?: string | null;
+      text?: string | null;
+      size?: number | null;
+    } | null;
+    /** Persist the full TimePeriod object as-is; `null` clears the override. */
+    timePeriod?: unknown | null;
+    /** Gauge target. `null` clears, falls back to the SEED default. */
+    target?: number | null;
+  },
+): Promise<void> {
+  const { workspaceId } = await requireEditor();
+  await mutateLayout(dashboardId, workspaceId, (current) => ({
+    widgets: current.widgets.map((w) => {
+      if (w.id !== widgetId) return w;
+      const nextDisplay: Record<string, unknown> = { ...(w.display ?? {}) };
+      if (patch.timePeriod !== undefined) {
+        if (patch.timePeriod === null) delete nextDisplay.timePeriod;
+        else nextDisplay.timePeriod = patch.timePeriod;
+      }
+      if (patch.target !== undefined) {
+        if (patch.target === null || !Number.isFinite(patch.target)) {
+          delete nextDisplay.target;
+        } else {
+          // Negative gauge targets aren't meaningful; clamp at 0.
+          nextDisplay.target = Math.max(0, patch.target);
+        }
+      }
+      if (patch.title !== undefined) {
+        const t = patch.title?.toString().trim().slice(0, 80) ?? "";
+        if (!t) delete nextDisplay.title;
+        else nextDisplay.title = t;
+      }
+      if (patch.titleSize !== undefined) {
+        if (patch.titleSize === null) delete nextDisplay.titleSize;
+        else {
+          // Clamp to sane bounds — too small is unreadable from a TV, too
+          // big crashes into chart content. The cqh default sizes between
+          // 20–64 px; we let operators override to anything 12–96 px.
+          nextDisplay.titleSize = Math.max(12, Math.min(96, Math.round(patch.titleSize)));
+        }
+      }
+      if (patch.titleAlign !== undefined) {
+        if (patch.titleAlign === null) delete nextDisplay.titleAlign;
+        else if (
+          patch.titleAlign === "left" ||
+          patch.titleAlign === "center" ||
+          patch.titleAlign === "right"
+        ) {
+          nextDisplay.titleAlign = patch.titleAlign;
+        }
+      }
+      if (patch.chip !== undefined) {
+        if (patch.chip === null) {
+          delete nextDisplay.chip;
+        } else {
+          const cur = (nextDisplay.chip as Record<string, unknown> | undefined) ?? {};
+          const text =
+            patch.chip.text === undefined
+              ? cur.text
+              : patch.chip.text === null
+                ? ""
+                : patch.chip.text.trim().slice(0, 32);
+          // Empty text → drop the chip entirely. A chip without a label
+          // is just decoration that confuses operators trying to read it.
+          if (!text || typeof text !== "string") {
+            delete nextDisplay.chip;
+          } else {
+            const next: Record<string, unknown> = { ...cur, text };
+            if (patch.chip.icon !== undefined) {
+              if (patch.chip.icon === null || patch.chip.icon === "none") delete next.icon;
+              else next.icon = patch.chip.icon;
+            }
+            if (patch.chip.color !== undefined) {
+              if (patch.chip.color === null) delete next.color;
+              else next.color = patch.chip.color;
+            }
+            if (patch.chip.size !== undefined) {
+              if (patch.chip.size === null) delete next.size;
+              else next.size = Math.max(8, Math.min(64, Math.round(patch.chip.size)));
+            }
+            nextDisplay.chip = next;
+          }
+        }
+      }
+      return { ...w, display: nextDisplay };
+    }),
+  }));
+}
+
+/**
+ * Bulk-apply new grid positions after a drag/resize gesture in
+ * `EditableDashboardGrid`. Each entry must match a widget already in the
+ * layout — we don't create or delete widgets here, only update `pos`.
+ *
+ * Coordinates are clamped to the 12-col grid so a malformed payload (e.g.
+ * the user dragged a wide widget past the right edge in a non-responsive
+ * breakpoint) can't break the renderer.
+ */
+export async function updateLayout(
+  dashboardId: string,
+  positions: Array<{ id: string; x: number; y: number; w: number; h: number }>,
+): Promise<void> {
+  const { workspaceId } = await requireEditor();
+  // Build a quick lookup so we can apply n positions in O(n) without an
+  // inner .find() per widget.
+  const byId = new Map(positions.map((p) => [p.id, p]));
+  await mutateLayout(dashboardId, workspaceId, (current) => ({
+    widgets: current.widgets.map((w) => {
+      const next = byId.get(w.id);
+      if (!next) return w;
+      return {
+        ...w,
+        pos: {
+          x: Math.max(0, Math.min(11, Math.floor(next.x))),
+          y: Math.max(0, Math.floor(next.y)),
+          w: Math.max(1, Math.min(12, Math.floor(next.w))),
+          h: Math.max(1, Math.min(12, Math.floor(next.h))),
+        },
+      };
+    }),
+  }));
+}

@@ -166,7 +166,25 @@ body { min-width: 1280px; }
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   display: flex; flex-direction: column;
+  /* Fill the grid cell. `height: 100%` is critical for `container-type: size`
+     to resolve `cqh` values — without a determinate block-size, the
+     container query height collapses to 0 (the widget then has 0 height,
+     children see 0cqh, everything goes invisible). */
+  height: 100%;
+  width: 100%;
   min-height: 0;
+  /* Hard clip — content inside (charts, big numbers) used to bleed onto
+     neighbouring widgets when the cell was shorter than the chart asked
+     for. With `overflow: hidden` the widget is its own visual contract:
+     never escapes its grid cell. */
+  overflow: hidden;
+  /* Establish a containment context so children can size themselves
+     against the widget's actual width AND height via cqw / cqh units.
+     This is what makes `.sv-value`, `.widget-headline-value`, etc. shrink
+     when the parent grid cell shrinks — instead of using `vw` (which
+     ignores cell height entirely). */
+  container-type: size;
+  container-name: widget;
   transition: border-color 140ms ease-out, transform 200ms ease-out;
   position: relative;
 }
@@ -175,23 +193,62 @@ body { min-width: 1280px; }
 
 .widget-head {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 14px 16px 10px;
+  padding: clamp(10px, 2.4cqh, 18px) clamp(14px, 2cqw, 20px) clamp(4px, 1cqh, 10px);
   min-width: 0;
+  flex-shrink: 0;
 }
 .widget-head-l { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.widget-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.widget-head-l > div { min-width: 0; flex: 1; }
-.widget-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.widget-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.widget-head-r { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.widget-head-l > .widget-title { min-width: 0; flex: 1; }
 .widget-drag {
   width: 18px; height: 18px;
   display: grid; place-items: center;
   color: var(--text-muted);
   opacity: 0; transition: opacity 140ms ease-out;
   cursor: grab;
+  flex-shrink: 0;
 }
-.widget-title { font-size: 13px; color: var(--text-primary); font-weight: 500; }
-.widget-sub  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+/* Title: big, prominent, the visual anchor of the widget. Default scales
+   with cell height via cqh so a tall cell gets a poster-sized title and
+   a short cell a sensible one. Operators can pin a specific px via the
+   `titleSize` prop. */
+.widget-title {
+  /* 11% of widget height — a 300 px chart cell gets a ~33 px title; a
+     600 px tall cell pushes against the 64 px ceiling. */
+  font-size: clamp(20px, 11cqh, 64px);
+  color: var(--text-primary);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.1;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Inline chip next to the title — icon + colored text on a tinted pill.
+   Sized fluidly via cqh by default; an explicit `font-size` inline-style
+   takes precedence (set by the operator). The `--chip-bg` / `--chip-fg`
+   custom properties come from the palette in `widgetChip.ts`. */
+.widget-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.25em 0.7em;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font-size: clamp(11px, 5cqh, 28px);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  /* So the icon stroke uses the chip's fg colour. */
+}
+.widget-chip svg { stroke: var(--chip-fg); }
+.widget-chip-text { display: inline-block; }
 
 .widget-iconbtn {
   width: 26px; height: 26px;
@@ -202,42 +259,16 @@ body { min-width: 1280px; }
 }
 .widget-iconbtn:hover { background: var(--bg-elev-2); color: var(--text-primary); }
 
-/* Hero number above chart-style widgets (Bar/Funnel/Ranking). Sits
-   between header and body. Gauge + SingleValue skip this — they render
-   their hero value inside the chart itself. */
-.widget-headline {
-  padding: 6px 16px 4px;
-  display: flex; flex-direction: column; gap: 4px;
-}
-.widget-headline-value {
-  font-size: clamp(40px, 5.5vw, 60px);
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.03em;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.widget-headline-caption {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  letter-spacing: 0.02em;
+.widget-body {
+  padding: clamp(6px, 1.4cqh, 14px) clamp(14px, 2cqw, 20px) clamp(10px, 2cqh, 18px);
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column; justify-content: center;
+  overflow: hidden;
 }
 
-.widget-body { padding: 4px 16px 14px; flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; }
-.widget-foot {
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 11px; color: var(--text-muted);
-}
-.widget-foot-time { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); }
-.widget-foot-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 4px var(--success); animation: pulse 2.4s ease-in-out infinite; }
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .35; }
-}
-
-/* Source pill */
+/* Source pill — still exported for the overflow menu / settings UI even
+   though it no longer renders in the widget header. */
 .src-pill {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11px; font-weight: 500;
@@ -251,59 +282,68 @@ body { min-width: 1280px; }
 .src-dot { width: 6px; height: 6px; border-radius: 50%; }
 
 /* ---------- GAUGE ---------- */
-.gauge { position: relative; padding-top: 4px; }
-.gauge svg { display: block; }
-.gauge-tick { font-family: var(--font-mono); font-size: 14px; fill: var(--text-muted); }
+/* Cap the gauge to the cell's available height (the widget body sets
+   `flex: 1; min-height: 0; overflow: hidden`), centred. Without this
+   cap a wide-short cell forces the gauge to overflow vertically because
+   aspectRatio = W/H would make it taller than the body. */
+.gauge { position: relative; padding-top: 0; max-height: 100%; max-width: 100%; align-self: center; }
+.gauge svg { display: block; max-height: 100%; }
+.gauge-tick { font-family: var(--font-mono); font-size: clamp(10px, 2cqh, 14px); fill: var(--text-muted); }
 
 /* ---------- BAR CHART ---------- */
-.bars-wrap { display: flex; flex-direction: column; gap: 14px; height: 100%; }
-.chart-axis { fill: var(--text-muted); font-size: 14px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.chart-legend { display: flex; gap: 20px; font-size: 15px; color: var(--text-muted); padding-left: 32px; }
+.bars-wrap { display: flex; flex-direction: column; gap: clamp(6px, 2cqh, 14px); height: 100%; }
+.chart-axis { fill: var(--text-muted); font-size: clamp(10px, 2cqh, 14px); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.chart-legend { display: flex; gap: 20px; font-size: clamp(11px, 2.4cqh, 15px); color: var(--text-muted); padding-left: 32px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 8px; }
 .lg-sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
 
 /* ---------- FUNNEL ---------- */
-.funnel { display: flex; flex-direction: column; }
-.funnel-row { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; padding: 8px 0; }
-.funnel-label { display: flex; flex-direction: column; gap: 4px; }
-.funnel-name { color: var(--text-primary); font-size: 18px; font-weight: 500; }
-.funnel-bar-wrap { background: var(--bg-elev-2); border-radius: var(--radius-md); height: 56px; overflow: hidden; }
+/* Funnel rows + arrows compute their own heights from the widget so a
+   funnel never overflows. Tight cells get short bars, tall cells get the
+   designed 56px bars. */
+.funnel { display: flex; flex-direction: column; height: 100%; min-height: 0; justify-content: center; }
+.funnel-row { display: grid; grid-template-columns: clamp(110px, 22cqw, 200px) 1fr; gap: clamp(10px, 1.8cqw, 18px); align-items: center; padding: clamp(2px, 0.6cqh, 8px) 0; }
+.funnel-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.funnel-name { color: var(--text-primary); font-size: clamp(12px, 2.6cqh, 18px); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.funnel-bar-wrap { background: var(--bg-elev-2); border-radius: var(--radius-md); height: clamp(22px, 7cqh, 56px); overflow: hidden; }
 .funnel-bar {
   height: 100%;
   border-radius: var(--radius-md);
-  display: flex; align-items: center; padding: 0 18px;
+  display: flex; align-items: center; padding: 0 clamp(8px, 1.4cqw, 18px);
   color: #050B1F; font-weight: 500;
   min-width: 80px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 :root[data-theme="light"] .funnel-bar { color: #fff; }
-.funnel-bar-value { font-size: 20px; font-variant-numeric: tabular-nums; }
-.funnel-arrow { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; padding: 4px 0; }
-.funnel-arrow-line { height: 18px; border-left: 1.5px dashed var(--border-strong); margin-left: 60px; }
-.funnel-conv { color: var(--text-tertiary); font-size: 15px; padding-left: 18px; }
+.funnel-bar-value { font-size: clamp(12px, 2.8cqh, 20px); font-variant-numeric: tabular-nums; }
+.funnel-arrow { display: grid; grid-template-columns: clamp(110px, 22cqw, 200px) 1fr; gap: clamp(10px, 1.8cqw, 18px); align-items: center; padding: clamp(2px, 0.4cqh, 4px) 0; }
+.funnel-arrow-line { height: clamp(8px, 2cqh, 18px); border-left: 1.5px dashed var(--border-strong); margin-left: clamp(20px, 5cqw, 60px); }
+.funnel-conv { color: var(--text-tertiary); font-size: clamp(11px, 2.2cqh, 15px); padding-left: 18px; }
 
 /* ---------- RANKING ---------- */
-/* Row height scales via a CSS variable — TV mode overrides --row-h. */
-.rank-list { position: relative; --row-h: 68px; height: calc(5 * var(--row-h) + 12px); }
+/* Row height derives from the widget via cqh so 5 rows always fit. With
+   the standard ranking widget showing 5 entries, --row-h * 5 ≈ 90% of
+   the widget body — leaves room for header/headline/foot. */
+.rank-list { position: relative; --row-h: clamp(26px, 12cqh, 68px); height: calc(5 * var(--row-h) + 8px); }
 .rank-row {
   position: absolute; left: 0; right: 0; top: 0;
   transform: translateY(calc(var(--rank-pos, 0) * var(--row-h)));
   height: var(--row-h);
   display: grid;
-  grid-template-columns: 44px 48px 1fr;
+  grid-template-columns: clamp(24px, 4cqh, 44px) clamp(28px, 5cqh, 48px) 1fr;
   align-items: center;
-  gap: 16px;
+  gap: clamp(8px, 1.2cqw, 16px);
   padding: 0 6px;
   transition: transform 600ms cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 .rank-num {
-  width: 44px; height: 44px;
+  width: clamp(24px, 4cqh, 44px); height: clamp(24px, 4cqh, 44px);
   display: grid; place-items: center;
   border-radius: 50%;
   background: var(--bg-elev-2);
   color: var(--text-tertiary);
-  font-size: 18px;
+  font-size: clamp(11px, 2.2cqh, 18px);
   font-variant-numeric: tabular-nums;
 }
 .rank-num.rank-top {
@@ -312,17 +352,17 @@ body { min-width: 1280px; }
   box-shadow: 0 0 16px rgba(251,191,36,.4);
 }
 .rank-avatar {
-  width: 48px; height: 48px;
+  width: clamp(28px, 5cqh, 48px); height: clamp(28px, 5cqh, 48px);
   display: grid; place-items: center;
   border-radius: 50%;
-  font-size: 16px; font-weight: 500; color: #fff;
+  font-size: clamp(11px, 2.2cqh, 16px); font-weight: 500; color: #fff;
   letter-spacing: 0.02em;
 }
-.rank-main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.rank-name-row { display: flex; justify-content: space-between; align-items: baseline; }
-.rank-name { font-size: 18px; color: var(--text-primary); font-weight: 500; }
-.rank-value { font-size: 18px; color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; }
-.rank-bar-track { position: relative; height: 8px; background: var(--bg-elev-2); border-radius: 999px; overflow: hidden; }
+.rank-main { display: flex; flex-direction: column; gap: clamp(2px, 0.6cqh, 5px); min-width: 0; }
+.rank-name-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rank-name { font-size: clamp(12px, 2.6cqh, 18px); color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-value { font-size: clamp(12px, 2.6cqh, 18px); color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank-bar-track { position: relative; height: clamp(4px, 1cqh, 8px); background: var(--bg-elev-2); border-radius: 999px; overflow: hidden; }
 .rank-bar {
   height: 100%;
   background: linear-gradient(90deg, var(--primary), var(--primary-hover));
@@ -331,7 +371,7 @@ body { min-width: 1280px; }
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .rank-bar-target { display: none; }
-.rank-meta { display: flex; justify-content: space-between; font-size: 14px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rank-meta { display: flex; justify-content: space-between; font-size: clamp(10px, 2cqh, 14px); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .rank-delta.up { color: var(--success); }
 .rank-delta.down { color: var(--danger); }
 
@@ -339,24 +379,46 @@ body { min-width: 1280px; }
 /* Stack vertically — value on top, sparkline full-width below, meta last.
    This frees the entire row for a TV-readable number and keeps the trend
    visually balanced with the value. */
-.sv { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+.sv {
+  display: flex; flex-direction: column;
+  gap: clamp(4px, 1.5cqh, 12px);
+  padding: 0;
+  height: 100%;
+  min-height: 0;
+}
 .sv-value {
-  font-size: clamp(40px, 6vw, 64px);
+  /* 22cqh = 22% of widget height. In a h=2 cell (~260 px) that's ~57 px;
+     in a h=1 cell (~130 px) that's ~28 px — both readable. The clamp
+     floor protects very short cells; the ceiling stops it ballooning on
+     tall ones. */
+  font-size: clamp(24px, 22cqh, 72px);
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.03em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
-.sv-spark { width: 100%; height: 44px; display: block; }
+/* The sparkline now flexes — absorbs leftover vertical space instead of
+   being a fixed 44 px that doesn't fit in a short cell. */
+.sv-spark { width: 100%; flex: 1 1 auto; min-height: 18px; display: block; }
 .sv-spark svg { width: 100%; height: 100%; display: block; }
-.sv-bottom { display: flex; flex-direction: column; gap: 6px; font-size: 16px; margin-top: 2px; }
+.sv-bottom {
+  display: flex; flex-direction: column;
+  gap: clamp(2px, 0.6cqh, 6px);
+  font-size: clamp(11px, 2.6cqh, 16px);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
 .sv-delta { display: inline-flex; align-items: baseline; gap: 8px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.sv-delta-arrow { font-size: 13px; }
+.sv-delta-arrow { font-size: clamp(10px, 2cqh, 13px); }
 .sv-delta.up { color: var(--success); }
 .sv-delta.down { color: var(--danger); }
 .sv-delta-abs { color: var(--text-muted); font-weight: 400; }
-.sv-period { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.sv-period { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(10px, 2.2cqh, 14px); }
 
 /* ---------- Empty / placeholder slot ---------- */
 .widget-add {
@@ -372,3 +434,103 @@ body { min-width: 1280px; }
 .widget-add:hover { color: var(--primary); border-color: var(--border-brand); background: var(--primary-soft); cursor: pointer; }
 .widget-add-inner { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .widget-add-icon { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-elev-2); border: 1px solid var(--border); }
+
+/* /queries row name link — server-component compatible hover. */
+.query-row-link { transition: color 140ms ease-out; }
+.query-row-link:hover { color: var(--primary) !important; }
+
+/* =============================================================
+   APPEARANCE — optional WebGL backgrounds + glass cards
+   ============================================================= */
+
+/* The fixed background layer sits at z-index 0; everything else gets a
+   stacking context above it. Without this, the body's solid background
+   would cover the effect. */
+.app { position: relative; z-index: 1; }
+body:has([data-bg-effect]) { background: transparent; }
+
+/* Glass mode — when the operator picks "Glass cards" in the appearance
+   menu we set `data-glass="on"` on <html>. Cards become translucent
+   with a backdrop blur so the chosen background bleeds through. */
+:root[data-glass="on"] .widget,
+:root[data-glass="on"] .card {
+  background: color-mix(in srgb, var(--bg-elev-1) 70%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-color: color-mix(in srgb, var(--border-strong) 60%, transparent);
+}
+:root[data-glass="on"] .widget-head,
+:root[data-glass="on"] .widget-body { background: transparent; }
+
+/* Subtle inner glow on glass cards to make the edge visible against
+   wildly varying background colors. */
+:root[data-glass="on"] .widget {
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, #fff 12%, transparent),
+    0 4px 16px -4px color-mix(in srgb, #000 18%, transparent);
+}
+
+/* =============================================================
+   REACT-GRID-LAYOUT — editor-only
+   ============================================================= */
+/* The minimal slice of RGL's stock stylesheet we actually need,
+   restyled with our tokens so the editor matches the design system. */
+.dash-rgl-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.dash-rgl {
+  position: relative;
+  transition: height 200ms ease;
+}
+.dash-rgl .react-grid-item {
+  /* The library positions items via translate3d. We only animate while
+     idle — react-grid-layout strips the transition during drag/resize
+     by setting style.transition = "none" inline. */
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.dash-rgl .react-grid-item.cssTransforms { transition-property: transform; }
+.dash-rgl .react-grid-item.resizing { z-index: 3; transition: none; will-change: width, height; }
+.dash-rgl .react-grid-item.react-draggable-dragging {
+  z-index: 4; transition: none; cursor: grabbing;
+  box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.35);
+}
+.dash-rgl .react-grid-item.react-grid-placeholder {
+  background: var(--primary-soft);
+  border: 1.5px dashed var(--primary);
+  border-radius: var(--radius-2xl);
+  opacity: 0.6;
+  transition-duration: 100ms;
+  z-index: 2;
+  user-select: none;
+}
+.dash-rgl-cell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+.dash-rgl-cell > * { width: 100%; }
+
+/* SE resize handle — a small diagonal chevron in the bottom-right corner.
+   Hidden until the widget is hovered so it doesn't add visual noise. */
+.dash-rgl .react-resizable-handle {
+  position: absolute;
+  width: 18px; height: 18px;
+  right: 4px; bottom: 4px;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18' fill='none'><path d='M14 5L14 14L5 14' stroke='%2399A0AE' stroke-width='1.5' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: bottom right;
+}
+.dash-rgl .react-grid-item:hover .react-resizable-handle { opacity: 1; }
+.dash-rgl .react-resizable-handle::after { content: ""; } /* defang RGL default ::after pseudo */
+
+/* While dragging, dim the original slot's outline so the placeholder is
+   the visible target instead. */
+.dash-rgl .react-grid-item.react-draggable-dragging .widget { border-color: var(--border-strong); }
+
+/* Don't show RGL's "static" handle on items the library auto-marks. */
+.dash-rgl .react-grid-item.static .react-resizable-handle { display: none; }

@@ -361,7 +361,13 @@
 }
 .tv-slide-fullbleed.is-active { opacity: 1; pointer-events: auto; }
 
-.tv-eyebrow { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.tv-eyebrow { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; flex-shrink: 0; }
+
+/* TV mode: tighten the head + body a touch since there's no editor
+   chrome (drag handles, menu) to make room for. Widget already renders
+   only title + chart — no footer, no headline, nothing else. */
+.tv-stage .widget-head { padding: clamp(8px, 1.8cqh, 14px) 14px clamp(2px, 0.6cqh, 8px); }
+.tv-stage .widget-body { padding: clamp(4px, 1cqh, 10px) 14px clamp(6px, 1.4cqh, 14px); }
 .tv-h2 { font-size: 44px; font-weight: 500; color: var(--text-primary); letter-spacing: -0.02em; margin: 0 0 32px; line-height: 1.05; }
 
 /* TV gauge layout */

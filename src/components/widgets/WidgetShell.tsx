@@ -1,51 +1,58 @@
 import type { ReactNode } from "react";
-import { Icons } from "@/components/ui/Icon";
-import { SourcePill } from "./SourcePill";
-import type { DataSource } from "./types";
+import { Icons, type IconName } from "@/components/ui/Icon";
+import {
+  CHIP_COLORS,
+  type WidgetChip,
+} from "@/components/dashboard/widgetChip";
 
 /**
- * Common chrome around every widget. Renders a header row (title +
- * subtitle + source pill + action), an optional hero "headline" block
- * (the big number that sits above chart-style children), the widget body,
- * and a "Live · updated …" footer.
+ * Minimal widget chrome — title (+ optional chip) and chart.
  *
- * Title size is configurable per widget — the dashboard layout owns the
- * label and how prominent it should read. `headline` adds the hero number
- * above the chart for widgets where the chart alone doesn't carry the
- * top-line value (Bar, Funnel, Ranking). Gauge + SingleValue already
- * render their hero value inside the chart, so they leave it unset.
+ * Per design: a chart widget should communicate **two things** at a glance —
+ * what the chart represents (the title) and the chart itself. Everything
+ * else (subtitle, source pill, DEMO/Live badge, hero number block above
+ * the chart, "Live · updated now" footer) is either redundant with the
+ * chart's own contents (the bar/gauge already carries its own labelling)
+ * or noise that pulls the eye off the data.
+ *
+ * The optional `chip` renders as an inline pill next to the title — icon
+ * + tinted background + coloured text — for operator-controlled labels
+ * like "Q2", "live", "5-day trail". Its size is independently configurable
+ * (defaults to scale with the widget like the title).
+ *
+ * The overflow menu (3-dot) keeps all the operational actions out of
+ * sight until the operator wants them. The drag handle is hover-revealed
+ * only in editor mode.
  */
 export type WidgetShellProps = {
   title: string;
-  subtitle?: string;
-  /** Title font-size in px (default 13). Picked by layout config. */
+  /** Title font-size in px. When unset, scales fluidly via cqh. */
   titleSize?: number;
-  source?: DataSource;
-  updated?: string;
-  /** Big number rendered above the chart body. */
-  headline?: string;
-  /** Tiny caption under the headline (e.g. "total contacts"). */
-  headlineCaption?: string;
+  /** Horizontal alignment of the title text within its flex slot. */
+  titleAlign?: "left" | "center" | "right";
+  /** Optional inline chip beside the title. */
+  chip?: WidgetChip;
+  /** Chart / value content rendered below the title. */
   children: ReactNode;
-  footer?: false;
+  /** Show the hover-revealed drag handle. Editor-only. */
   dragHandle?: boolean;
+  /** The 3-dot overflow menu (editor-only). */
   action?: ReactNode;
 };
 
 export function WidgetShell({
   title,
-  subtitle,
   titleSize,
-  source,
-  updated = "now",
-  headline,
-  headlineCaption,
+  titleAlign,
+  chip,
   children,
-  footer,
   dragHandle = true,
   action,
 }: WidgetShellProps) {
-  const titleStyle = titleSize ? { fontSize: titleSize } : undefined;
+  const titleStyle: React.CSSProperties = {
+    ...(titleSize ? { fontSize: titleSize } : {}),
+    ...(titleAlign ? { textAlign: titleAlign } : {}),
+  };
   return (
     <div className="widget">
       <header className="widget-head">
@@ -55,41 +62,40 @@ export function WidgetShell({
               <Icons.Drag size={14} />
             </span>
           )}
-          <div>
-            <div className="widget-title" style={titleStyle}>
-              {title}
-            </div>
-            {subtitle && <div className="widget-sub">{subtitle}</div>}
+          <div
+            className="widget-title"
+            style={Object.keys(titleStyle).length ? titleStyle : undefined}
+          >
+            {title}
           </div>
+          {chip?.text ? <WidgetChipPill chip={chip} /> : null}
         </div>
-        <div className="widget-head-r">
-          {source && <SourcePill source={source} />}
-          {action ?? (
-            <button className="widget-iconbtn" title="More">
-              <Icons.More size={14} />
-            </button>
-          )}
-        </div>
+        {action && <div className="widget-head-r">{action}</div>}
       </header>
-      {(headline || headlineCaption) && (
-        <div className="widget-headline">
-          {headline && <div className="widget-headline-value">{headline}</div>}
-          {headlineCaption && (
-            <div className="widget-headline-caption">{headlineCaption}</div>
-          )}
-        </div>
-      )}
       <div className="widget-body">{children}</div>
-      {footer !== false && (
-        <footer className="widget-foot">
-          <span className="widget-foot-time">
-            <span className="widget-foot-dot" /> Live · updated {updated}
-          </span>
-          <button className="widget-iconbtn" title="Refresh">
-            <Icons.Refresh size={13} />
-          </button>
-        </footer>
-      )}
     </div>
+  );
+}
+
+function WidgetChipPill({ chip }: { chip: WidgetChip }) {
+  const palette = CHIP_COLORS[chip.color ?? "neutral"];
+  // SVG icons want a numeric px; the chip's text scales via cqh by default,
+  // so we pin the icon to the explicit size when given, otherwise default
+  // to a sensible 14 px. The chip's auto sizing is driven by cqh in CSS.
+  const iconSize = chip.size ? Math.max(10, Math.round(chip.size * 0.75)) : 14;
+  const Icon =
+    chip.icon && chip.icon !== "none" ? (Icons[chip.icon as IconName] ?? null) : null;
+
+  const styleVars = {
+    "--chip-bg": palette.bg,
+    "--chip-fg": palette.fg,
+    fontSize: chip.size ? `${chip.size}px` : undefined,
+  } as React.CSSProperties;
+
+  return (
+    <span className="widget-chip" style={styleVars}>
+      {Icon ? <Icon size={iconSize} /> : null}
+      <span className="widget-chip-text">{chip.text}</span>
+    </span>
   );
 }

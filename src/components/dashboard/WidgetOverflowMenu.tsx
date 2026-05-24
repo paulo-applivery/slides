@@ -5,13 +5,16 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icons } from "@/components/ui/Icon";
 import { bindWidget, removeWidget } from "@/lib/dashboards";
 import { QueryPickerDialog } from "./QueryPickerDialog";
+import { EditWidgetDialog } from "./EditWidgetDialog";
+import type { WidgetChip } from "./widgetChip";
+import type { TimePeriod } from "@/lib/timePeriod";
 import type { WidgetType } from "@/lib/queries/compat";
 
 /**
- * Per-widget dropdown. Bind / Unbind / Remove.
+ * Per-widget dropdown.
  *
- * `Bind a query` opens a Radix Dialog with saved queries filtered to the
- * shapes this widget type can render.
+ * Edit title · Bind / Unbind · Remove. Title editing tops the list
+ * because most layout work after `Add widget` is renaming + sizing.
  */
 export function WidgetOverflowMenu({
   dashboardId,
@@ -19,19 +22,52 @@ export function WidgetOverflowMenu({
   widgetType,
   widgetName,
   hasBinding,
+  currentTitle,
+  currentTitleSize,
+  currentTitleAlign,
+  currentChip,
+  currentTimePeriod,
+  currentTarget,
 }: {
   dashboardId: string;
   widgetId: string;
   widgetType: WidgetType;
   widgetName: string;
   hasBinding: boolean;
+  /** The title the widget is currently rendering. */
+  currentTitle: string;
+  /** Explicit titleSize override (px), or undefined for auto. */
+  currentTitleSize?: number;
+  /** Current title alignment. */
+  currentTitleAlign?: "left" | "center" | "right";
+  /** Current chip configuration (undefined when no chip). */
+  currentChip?: WidgetChip;
+  /** Current time period override (undefined when following dashboard). */
+  currentTimePeriod?: TimePeriod;
+  /** Current gauge target (undefined when using SEED default). */
+  currentTarget?: number;
 }) {
+  // Controlled menu state — every selection (Edit / Bind / Unbind /
+  // Remove) explicitly closes the dropdown. Previously we used
+  // `e.preventDefault()` in onSelect to stop Radix's default close
+  // behaviour (so the menu could survive a dialog mount), but that
+  // left it hovering over the modal — exactly the bug.
+  const [menuOpen, setMenuOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [, startTransition] = useTransition();
+
+  function pick(action: () => void) {
+    setMenuOpen(false);
+    // Defer to the next tick so the dropdown's exit animation can
+    // start before the dialog mounts; otherwise Radix's focus
+    // management briefly fights with the dialog's autofocus.
+    setTimeout(action, 0);
+  }
 
   return (
     <>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenu.Trigger asChild>
           <button
             type="button"
@@ -53,15 +89,21 @@ export function WidgetOverflowMenu({
               borderRadius: 12,
               boxShadow: "var(--shadow-md)",
               padding: 6,
-              minWidth: 200,
+              minWidth: 220,
               zIndex: 100,
             }}
           >
             <DropdownMenu.Item
-              onSelect={(e) => {
-                e.preventDefault();
-                setPickerOpen(true);
-              }}
+              onSelect={() => pick(() => setEditOpen(true))}
+              style={menuItemStyle("normal")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "")}
+            >
+              <Icons.Edit size={14} /> Edit widget…
+            </DropdownMenu.Item>
+            <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+            <DropdownMenu.Item
+              onSelect={() => pick(() => setPickerOpen(true))}
               style={menuItemStyle("primary")}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "")}
@@ -70,12 +112,13 @@ export function WidgetOverflowMenu({
             </DropdownMenu.Item>
             {hasBinding && (
               <DropdownMenu.Item
-                onSelect={(e) => {
-                  e.preventDefault();
-                  startTransition(async () => {
-                    await bindWidget(dashboardId, widgetId, null);
-                  });
-                }}
+                onSelect={() =>
+                  pick(() =>
+                    startTransition(async () => {
+                      await bindWidget(dashboardId, widgetId, null);
+                    }),
+                  )
+                }
                 style={menuItemStyle("normal")}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "")}
@@ -85,13 +128,14 @@ export function WidgetOverflowMenu({
             )}
             <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
             <DropdownMenu.Item
-              onSelect={(e) => {
-                e.preventDefault();
-                if (!confirm(`Remove this ${widgetType} widget?`)) return;
-                startTransition(async () => {
-                  await removeWidget(dashboardId, widgetId);
-                });
-              }}
+              onSelect={() =>
+                pick(() => {
+                  if (!confirm(`Remove this ${widgetType} widget?`)) return;
+                  startTransition(async () => {
+                    await removeWidget(dashboardId, widgetId);
+                  });
+                })
+              }
               style={menuItemStyle("danger")}
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--danger-soft)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "")}
@@ -107,6 +151,19 @@ export function WidgetOverflowMenu({
         dashboardId={dashboardId}
         widgetId={widgetId}
         widgetType={widgetType}
+      />
+      <EditWidgetDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        dashboardId={dashboardId}
+        widgetId={widgetId}
+        widgetType={widgetType}
+        currentTitle={currentTitle}
+        currentTitleSize={currentTitleSize}
+        currentTitleAlign={currentTitleAlign}
+        currentChip={currentChip}
+        currentTimePeriod={currentTimePeriod}
+        currentTarget={currentTarget}
       />
     </>
   );

@@ -83,9 +83,23 @@ export default async function QueriesPage() {
                   alignItems: "center",
                 }}
               >
-                <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
-                  {q.name}
-                </span>
+                {editable ? (
+                  <Link
+                    href={`/queries/${q.id}/edit`}
+                    className="query-row-link"
+                    style={{
+                      color: "var(--text-primary)",
+                      fontWeight: 500,
+                      textDecoration: "none",
+                    }}
+                  >
+                    {q.name}
+                  </Link>
+                ) : (
+                  <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                    {q.name}
+                  </span>
+                )}
                 <span>
                   <span
                     className="badge"

@@ -1,67 +1,67 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { TopBar } from "@/components/shell/TopBar";
 import { canEdit, type Role } from "@/lib/roles";
 import { QueryWizard } from "@/components/queries/QueryWizard";
 import { CLIENT_METRICS } from "@/lib/queries/catalog";
+import { getQueryForEdit } from "@/lib/queries/actions";
 import {
   getHubspotFieldSelectionWithFreshOptions,
   getHubspotIntegration,
 } from "@/lib/integrations/hubspot";
 
-export default async function NewQueryPage() {
+/**
+ * Edit page for a saved query. Loads the row, pre-fills the wizard via
+ * its new `initial` prop. Save dispatches to `updateQueryAction` instead
+ * of `createQueryAction`.
+ */
+export default async function EditQueryPage({
+  params,
+}: {
+  params: { id: string };
+}) {
   const session = await auth();
   if (!session?.user?.workspaceId) redirect("/login");
 
   const role = (session.user.role ?? null) as Role | null;
   if (!canEdit(role)) redirect("/queries");
 
-  // Per-source allow-lists. When HubSpot is connected, we narrow the
-  // wizard's field menu to the properties the operator ticked in
-  // /integrations. When it isn't, the wizard falls back to its built-in
-  // SOURCE_FIELDS catalogue (no narrowing). Stripe has no discovery
-  // surface yet — passed as `undefined` to keep its full menu visible.
+  const query = await getQueryForEdit(params.id);
+  if (!query) notFound();
+
+  // Same per-source field-allow-list + custom-fields wiring as /queries/new.
+  // Lazy on-demand backfill for enum options (see /queries/new for rationale).
   const hubspot = await getHubspotIntegration(session.user.workspaceId);
-  // Read selection with on-demand backfill of missing enum options — the
-  // wizard needs Pipeline / Stage / Lifecycle Stage options to render the
-  // value dropdown instead of a useless text input. See
-  // `getHubspotFieldSelectionWithFreshOptions` for the lazy-fetch policy.
   const sel = hubspot
     ? await getHubspotFieldSelectionWithFreshOptions(session.user.workspaceId)
     : null;
   const hubspotAllowed = sel ? mapHubspotPropsToFieldIds(sel) : undefined;
-  // Custom (non-standard) HubSpot properties exposed as virtual field
-  // ids prefixed `custom:propName`. The wizard renders them in the
-  // Filters step; the executor's compileFilter resolves them to a
-  // `json_extract(custom_properties, '$.propName')` expression.
   const hubspotCustomFields = sel ? buildCustomFields(sel) : [];
-  // Standard-field enum overrides — Pipeline / Deal Stage / Lifecycle Stage
-  // are HubSpot enumerations whose internal values aren't human-readable
-  // (e.g. pipeline=`82a5edf5-…`, dealstage=`closedwon`). The catalog can't
-  // hardcode them per portal — pull them live from the operator's pick.
   const hubspotEnumOverrides = sel ? buildStandardEnumOverrides(sel) : {};
 
   return (
     <>
-      <TopBar crumbs={["Queries"]} name="New query" />
+      <TopBar
+        crumbs={["Queries"]}
+        name={query.name}
+      />
       <main className="main">
         <QueryWizard
           metrics={CLIENT_METRICS}
           allowedFieldsBySource={{ hubspot: hubspotAllowed }}
           customFieldsBySource={{ hubspot: hubspotCustomFields }}
           standardEnumOptionsBySource={{ hubspot: hubspotEnumOverrides }}
+          initial={{
+            id: query.id,
+            name: query.name,
+            config: query.config,
+          }}
         />
       </main>
     </>
   );
 }
 
-/**
- * Map HubSpot property names → internal field ids for the **standard**
- * fields that have live enum options. The wizard's filter value picker
- * uses these to render a dropdown of real pipeline IDs (with human
- * labels) instead of a free-text input.
- */
 function buildStandardEnumOverrides(sel: {
   deals: Array<{
     name: string;
@@ -97,12 +97,11 @@ function buildStandardEnumOverrides(sel: {
   return out;
 }
 
-/**
- * Standard HubSpot property names → our internal field ids (Drizzle
- * column names). Other (custom) properties are surfaced via
- * `buildCustomFields` and rendered with a `custom:` prefix in the
- * wizard.
- */
+// ─────────────────────────────────────────────────────────────────────────────
+// Duplicated from /queries/new/page.tsx — small enough to inline rather
+// than carve a shared module. If this grows to a third caller we'll lift.
+// ─────────────────────────────────────────────────────────────────────────────
+
 function mapHubspotPropsToFieldIds(sel: {
   deals: { name: string }[];
   contacts: { name: string }[];
@@ -138,12 +137,7 @@ function buildCustomFields(sel: {
     type: string;
     options?: Array<{ label: string; value: string }>;
   }>;
-}): Array<{
-  id: string;
-  label: string;
-  type: string;
-  options?: Array<{ label: string; value: string }>;
-}> {
+}) {
   const standardDeal = new Set([
     "dealname",
     "amount",

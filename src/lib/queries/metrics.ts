@@ -16,7 +16,7 @@ import {
 } from "@/lib/db/schema";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 
-export type Aggregation = "sum" | "count" | "avg" | "count_distinct";
+export type Aggregation = "sum" | "count" | "avg" | "min" | "max" | "count_distinct";
 
 export type MetricDef = {
   id: string;
@@ -60,6 +60,39 @@ export const METRICS: MetricDef[] = [
     dateField: "occurredAt",
   },
   {
+    id: "stripe.charge.avg_amount",
+    source: "stripe",
+    label: "Average charge (€)",
+    description: "Average charge size in the range.",
+    table: stripeCharges,
+    column: "amount",
+    aggregation: "avg",
+    unit: "EUR-cents",
+    dateField: "occurredAt",
+  },
+  {
+    id: "stripe.charge.max_amount",
+    source: "stripe",
+    label: "Largest charge (€)",
+    description: "Max charge in the range.",
+    table: stripeCharges,
+    column: "amount",
+    aggregation: "max",
+    unit: "EUR-cents",
+    dateField: "occurredAt",
+  },
+  {
+    id: "stripe.charge.min_amount",
+    source: "stripe",
+    label: "Smallest charge (€)",
+    description: "Min charge in the range.",
+    table: stripeCharges,
+    column: "amount",
+    aggregation: "min",
+    unit: "EUR-cents",
+    dateField: "occurredAt",
+  },
+  {
     id: "stripe.charge.count",
     source: "stripe",
     label: "Charge count",
@@ -90,6 +123,39 @@ export const METRICS: MetricDef[] = [
     table: hubspotDeals,
     column: "amount",
     aggregation: "sum",
+    unit: "EUR",
+    dateField: "closeDate",
+  },
+  {
+    id: "hubspot.deal.avg_amount",
+    source: "hubspot",
+    label: "Average deal value (€)",
+    description: "Average deal amount in the range.",
+    table: hubspotDeals,
+    column: "amount",
+    aggregation: "avg",
+    unit: "EUR",
+    dateField: "closeDate",
+  },
+  {
+    id: "hubspot.deal.max_amount",
+    source: "hubspot",
+    label: "Largest deal (€)",
+    description: "Max deal amount in the range.",
+    table: hubspotDeals,
+    column: "amount",
+    aggregation: "max",
+    unit: "EUR",
+    dateField: "closeDate",
+  },
+  {
+    id: "hubspot.deal.min_amount",
+    source: "hubspot",
+    label: "Smallest deal (€)",
+    description: "Min deal amount in the range.",
+    table: hubspotDeals,
+    column: "amount",
+    aggregation: "min",
     unit: "EUR",
     dateField: "closeDate",
   },

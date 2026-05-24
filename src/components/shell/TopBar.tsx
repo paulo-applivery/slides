@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { workspaces } from "@/lib/db/schema";
 import { UserMenu } from "./UserMenu";
+import { AppearanceMenu } from "@/components/theme/AppearanceMenu";
 
 /**
  * Top bar with breadcrumb, contextual right-side actions, divider, bell + avatar.
@@ -53,6 +54,7 @@ export async function TopBar({ crumbs, name, actions }: TopBarProps) {
           className="tb-divider"
           style={{ width: 1, height: 24, background: "var(--border)" }}
         />
+        <AppearanceMenu />
         <button className="btn btn-ghost btn-icon" aria-label="Notifications">
           <Icons.Bell size={16} />
         </button>

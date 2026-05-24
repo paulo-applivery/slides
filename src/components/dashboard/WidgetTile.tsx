@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { queries as queriesTable } from "@/lib/db/schema";
 import { runQuery, type ExecutorResult } from "@/lib/queries/executor";
+import { resolveTimePeriod } from "@/lib/timePeriod";
 import {
   adaptBar,
   adaptGauge,
@@ -10,11 +11,6 @@ import {
   WIDGET_ACCEPTS,
   type WidgetType,
 } from "@/lib/queries/compat";
-import {
-  headlineFromResult,
-  headlineFromSeed,
-  type Headline,
-} from "@/lib/queries/headline";
 import {
   BarChart,
   FunnelChart,
@@ -26,42 +22,44 @@ import {
 import { SEED, type Kpi } from "@/lib/seed";
 import { Icons } from "@/components/ui/Icon";
 import { WidgetOverflowMenu } from "./WidgetOverflowMenu";
+import type { WidgetChip } from "./widgetChip";
+import type { TimePeriod } from "@/lib/timePeriod";
 import type { DashboardLayout } from "@/lib/db/schema";
 
 type Widget = DashboardLayout["widgets"][number];
 
 /**
- * Optional display metadata stored on each layout widget.
+ * Layout-owned display metadata.
  *
- * The layout owns user-facing labels (title, subtitle, unit, period…) so a
- * single SingleValue widget can be "MRR" or "Churn" depending on which
- * row it represents — bound or not. Saved-query bindings supply numbers,
- * never names.
+ * `title` + `titleSize` + `chip` are the labelling surfaced in the new
+ * minimal chrome. The remaining `seedKey` / `unit` / `period` / `target`
+ * fields affect the *content* the chart renders, not the chrome around
+ * it.
  */
 type WidgetDisplay = {
   title?: string;
-  /** Title font-size in px. Defaults to the design system's 13 px. */
+  /** Title font-size in px. When unset, scales fluidly with cell height. */
   titleSize?: number;
-  subtitle?: string;
+  /** Horizontal alignment of the title within the head. */
+  titleAlign?: "left" | "center" | "right";
+  /** Optional inline chip beside the title. */
+  chip?: WidgetChip;
+  /** Widget-level time period override (otherwise dashboard's range wins). */
+  timePeriod?: TimePeriod;
   /** Picks which SEED entry to fall back to when the widget is unbound. */
   seedKey?: "mrr" | "arr" | "churn" | "newCust";
   unit?: "€" | "%" | "#";
   period?: string;
   /** Gauge-specific: hardcoded target until queries can carry one. */
   target?: number;
-  /** Override the auto-computed hero number caption. */
-  headlineCaption?: string;
 };
 
 /**
- * Server-rendered widget tile.
+ * Server-rendered widget tile — title + chart, period.
  *
- * If `widget.queryId` is set, fetches the saved query, runs it, adapts the
- * result to widget props, and renders the appropriate component.
- *
- * If `widget.queryId` is null, the widget renders its SEED fallback (picked
- * by `display.seedKey` so the four KPI tiles differentiate) with a Demo
- * badge + "Bind a query" CTA in the overflow menu.
+ * Bound widgets fetch and run their saved query; unbound widgets fall
+ * back to SEED. All operator actions (bind/unbind/remove) live in the
+ * 3-dot overflow menu — never in the widget chrome itself.
  */
 export async function WidgetTile({
   dashboardId,
@@ -74,8 +72,6 @@ export async function WidgetTile({
   widget: Widget;
   editable: boolean;
 }) {
-  // Placement (grid-row / grid-column) is owned by the parent `<Dashboard>`
-  // so this component just renders the shell + content.
   const display = (widget.display ?? {}) as WidgetDisplay;
 
   const bound = widget.queryId
@@ -95,6 +91,14 @@ export async function WidgetTile({
       executorResult = await runQuery(
         workspaceId,
         bound.config as Parameters<typeof runQuery>[1],
+        // When the widget has its own time period, resolve it now and
+        // pass concrete dates as an override — beats the query's
+        // `dateRange`. Without this, the picker UI looked like it
+        // worked but the executor kept honouring the saved query's
+        // window, producing "different data" between the two paths.
+        display.timePeriod
+          ? { dateOverride: toDateWindow(display.timePeriod) }
+          : undefined,
       );
     } catch (err) {
       executorError = err instanceof Error ? err.message : String(err);
@@ -105,54 +109,30 @@ export async function WidgetTile({
     !bound ||
     (executorResult && WIDGET_ACCEPTS[widget.type].includes(executorResult.kind));
 
-  // Hero number above the chart. Bar/Funnel/Ranking get one; Gauge +
-  // SingleValue render their hero value inside the chart and skip this.
-  let headline: Headline | null = null;
-  if (widget.type === "bar" || widget.type === "funnel" || widget.type === "ranking") {
-    if (executorResult && compat) {
-      headline = headlineFromResult(widget.type, executorResult);
-    }
-    if (!headline) headline = headlineFromSeed(widget.type);
-  }
-  if (headline && display.headlineCaption) {
-    headline = { ...headline, caption: display.headlineCaption };
-  }
-
+  const resolvedTitle = resolveTitle(display, widget.type, bound?.name);
   return (
     <WidgetShell
-      title={resolveTitle(display, widget.type, bound?.name)}
+      title={resolvedTitle}
       titleSize={display.titleSize}
-      subtitle={resolveSubtitle(display, widget.type, bound?.name)}
-      headline={headline?.value}
-      headlineCaption={headline?.caption}
-      source={bound ? (bound.source === "stripe" ? "stripe" : "hubspot") : undefined}
-      updated={bound ? "now" : undefined}
+      titleAlign={display.titleAlign}
+      chip={display.chip}
       dragHandle={editable}
       action={
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {!bound && (
-            <span
-              className="badge"
-              title="Demo data — bind this widget to a saved query"
-              style={{
-                background: "var(--bg-elev-2)",
-                color: "var(--text-muted)",
-                letterSpacing: "0.06em",
-              }}
-            >
-              Demo
-            </span>
-          )}
-          {editable && (
-            <WidgetOverflowMenu
-              dashboardId={dashboardId}
-              widgetId={widget.id}
-              widgetType={widget.type}
-              widgetName={bound?.name ?? resolveTitle(display, widget.type, undefined)}
-              hasBinding={!!bound}
-            />
-          )}
-        </span>
+        editable ? (
+          <WidgetOverflowMenu
+            dashboardId={dashboardId}
+            widgetId={widget.id}
+            widgetType={widget.type}
+            widgetName={bound?.name ?? resolvedTitle}
+            hasBinding={!!bound}
+            currentTitle={display.title ?? resolvedTitle}
+            currentTitleSize={display.titleSize}
+            currentTitleAlign={display.titleAlign}
+            currentChip={display.chip}
+            currentTimePeriod={display.timePeriod}
+            currentTarget={display.target}
+          />
+        ) : undefined
       }
     >
       {executorError ? (
@@ -170,10 +150,6 @@ export async function WidgetTile({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Title / subtitle resolution
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * Title priority:
  *   1. `display.title` — layout-owned label (e.g. "MRR")
@@ -186,23 +162,6 @@ function resolveTitle(
   queryName: string | undefined,
 ): string {
   return display.title ?? queryName ?? humanType(type);
-}
-
-/**
- * Subtitle priority:
- *   1. `display.subtitle` — always wins if set
- *   2. bound → "Live · <query name>" (when display.title overrode the
- *      query name, we still show it here so the user sees the source)
- *   3. unbound → "<human type> · demo data"
- */
-function resolveSubtitle(
-  display: WidgetDisplay,
-  type: WidgetType,
-  queryName: string | undefined,
-): string {
-  if (display.subtitle) return display.subtitle;
-  if (queryName) return `Live · ${queryName}`;
-  return `${humanType(type)} · demo data`;
 }
 
 function humanType(t: WidgetType): string {
@@ -305,6 +264,26 @@ function renderSeedFallback(widget: Widget, display: WidgetDisplay) {
     case "ranking":
       return <RankingWidget reps={[...SEED.reps]} />;
   }
+}
+
+/**
+ * Convert a widget `TimePeriod` into the {from, to} window the executor
+ * understands. `null` end of an "all time" period leaves both sides
+ * open — the executor skips the date filter entirely.
+ *
+ * The resolver returns ISO `yyyy-MM-dd` strings; we shift end-of-day so
+ * the filter is inclusive of the last day (HubSpot deal close dates are
+ * timestamps).
+ */
+function toDateWindow(tp: TimePeriod): {
+  from: Date | null;
+  to: Date | null;
+} {
+  const r = resolveTimePeriod(tp);
+  return {
+    from: r.start ? new Date(`${r.start}T00:00:00.000Z`) : null,
+    to: r.end ? new Date(`${r.end}T23:59:59.999Z`) : null,
+  };
 }
 
 function WidgetError({ message }: { message: string }) {

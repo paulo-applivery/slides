@@ -193,6 +193,136 @@ export async function deleteQueryAction(id: string): Promise<void> {
   revalidatePath("/queries");
 }
 
+/**
+ * Load a single query's name + config so the edit page can pre-fill the
+ * wizard. Workspace-gated; returns `null` for cross-tenant or missing ids.
+ */
+export async function getQueryForEdit(id: string): Promise<
+  | { id: string; name: string; source: "stripe" | "hubspot"; config: QueryConfig }
+  | null
+> {
+  const { workspaceId } = await requireWorkspace();
+  const row = await db.query.queries.findFirst({
+    where: and(eq(queries.id, id), eq(queries.workspaceId, workspaceId)),
+    columns: { id: true, name: true, source: true, config: true },
+  });
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    source: row.source as "stripe" | "hubspot",
+    config: row.config as QueryConfig,
+  };
+}
+
+/**
+ * Update an existing saved query. Same shape as create — validates the
+ * config against the Zod schema, re-runs once after save so the list's
+ * `lastResult` summary stays fresh.
+ */
+export async function updateQueryAction(input: {
+  id: string;
+  name: string;
+  config: unknown;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const { workspaceId } = await requireEditor();
+    const config = queryConfigSchema.parse(input.config);
+    const name = input.name.trim().slice(0, 120) || "Untitled query";
+
+    // Verify the query belongs to this workspace before mutating.
+    const existing = await db.query.queries.findFirst({
+      where: and(eq(queries.id, input.id), eq(queries.workspaceId, workspaceId)),
+      columns: { id: true },
+    });
+    if (!existing) return { ok: false, error: "Query not found." };
+
+    await db
+      .update(queries)
+      .set({
+        name,
+        source: config.source,
+        config,
+        updatedAt: new Date(),
+      })
+      .where(eq(queries.id, input.id));
+
+    // Re-run after save so the row's last-result strip reflects the
+    // change. Errors are recorded but don't roll back the update — a
+    // user editing a query expects their edit to land even if the
+    // re-execution fails.
+    try {
+      const res = await executeQuery(workspaceId, config);
+      const { summary, value } = summarize(res);
+      await db
+        .update(queries)
+        .set({
+          lastResult: { ranAt: Date.now(), ms: res.ms, summary, value },
+          lastRunAt: new Date(),
+        })
+        .where(eq(queries.id, input.id));
+    } catch (err) {
+      await db
+        .update(queries)
+        .set({
+          lastResult: {
+            ranAt: Date.now(),
+            ms: 0,
+            summary: null,
+            value: null,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          lastRunAt: new Date(),
+        })
+        .where(eq(queries.id, input.id));
+    }
+
+    revalidatePath("/queries");
+    revalidatePath("/dashboards");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to save.",
+    };
+  }
+}
+
+/**
+ * Duplicate a saved query — copies name (suffixed " (copy)") + config,
+ * leaves last-run data fresh. Returns the new id so the caller can
+ * redirect to its edit page.
+ */
+export async function duplicateQueryAction(
+  id: string,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    const { workspaceId, userId } = await requireEditor();
+    const src = await db.query.queries.findFirst({
+      where: and(eq(queries.id, id), eq(queries.workspaceId, workspaceId)),
+    });
+    if (!src) return { ok: false, error: "Query not found." };
+
+    const newId = crypto.randomUUID();
+    const newName = `${src.name} (copy)`.slice(0, 120);
+    await db.insert(queries).values({
+      id: newId,
+      workspaceId,
+      name: newName,
+      source: src.source,
+      config: src.config,
+      createdBy: userId,
+    });
+    revalidatePath("/queries");
+    return { ok: true, id: newId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to duplicate.",
+    };
+  }
+}
+
 export async function runQueryAction(id: string): Promise<void> {
   const { workspaceId } = await requireWorkspace();
   const row = await db.query.queries.findFirst({

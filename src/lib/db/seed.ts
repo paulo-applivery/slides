@@ -68,105 +68,65 @@ async function main() {
   // the seeded board renders immediately (real grid editor lands in Phase 3).
   const demoLayout: DashboardLayout = {
     widgets: [
+      // KPI strip: 4 single-value tiles, each 3 cols × 2 rows. A SingleValue
+      // widget at h=1 is physically too short for value + sparkline + delta
+      // once the widget header is factored in — bumping to h=2 gives them
+      // ~half a chart-row of breathing room.
       {
         id: "kpi-mrr",
         type: "singleValue",
         queryId: null,
-        pos: { x: 0, y: 0, w: 3, h: 1 },
-        display: {
-          title: "MRR",
-          subtitle: "Monthly recurring revenue",
-          seedKey: "mrr",
-          unit: "€",
-          period: "vs last month",
-        },
+        pos: { x: 0, y: 0, w: 3, h: 2 },
+        display: { title: "MRR", seedKey: "mrr", unit: "€", period: "vs last month" },
       },
       {
         id: "kpi-arr",
         type: "singleValue",
         queryId: null,
-        pos: { x: 3, y: 0, w: 3, h: 1 },
-        display: {
-          title: "ARR",
-          subtitle: "Annual run rate",
-          seedKey: "arr",
-          unit: "€",
-          period: "vs last month",
-        },
+        pos: { x: 3, y: 0, w: 3, h: 2 },
+        display: { title: "ARR", seedKey: "arr", unit: "€", period: "vs last month" },
       },
       {
         id: "kpi-churn",
         type: "singleValue",
         queryId: null,
-        pos: { x: 6, y: 0, w: 3, h: 1 },
-        display: {
-          title: "Net Churn",
-          subtitle: "Revenue lost / total",
-          seedKey: "churn",
-          unit: "%",
-          period: "vs last month",
-        },
+        pos: { x: 6, y: 0, w: 3, h: 2 },
+        display: { title: "Net Churn", seedKey: "churn", unit: "%", period: "vs last month" },
       },
       {
         id: "kpi-newcust",
         type: "singleValue",
         queryId: null,
-        pos: { x: 9, y: 0, w: 3, h: 1 },
-        display: {
-          title: "New customers",
-          subtitle: "Closed-won this month",
-          seedKey: "newCust",
-          unit: "#",
-          period: "vs last month",
-        },
+        pos: { x: 9, y: 0, w: 3, h: 2 },
+        display: { title: "New customers", seedKey: "newCust", unit: "#", period: "vs last month" },
       },
       {
         id: "gauge-revenue",
         type: "gauge",
         queryId: null,
-        pos: { x: 0, y: 1, w: 5, h: 2 },
-        display: {
-          title: "Q2 Revenue Target",
-          titleSize: 20,
-          subtitle: "Progress toward €500K goal",
-          target: 500_000,
-        },
+        pos: { x: 0, y: 2, w: 5, h: 3 },
+        display: { title: "Q2 Revenue Target", target: 500_000 },
       },
       {
         id: "bar-weekly",
         type: "bar",
         queryId: null,
-        pos: { x: 5, y: 1, w: 7, h: 2 },
-        display: {
-          title: "New revenue by week",
-          titleSize: 20,
-          subtitle: "Last 8 weeks · current vs previous",
-          headlineCaption: "total this period",
-        },
+        pos: { x: 5, y: 2, w: 7, h: 3 },
+        display: { title: "New revenue by week" },
       },
       {
         id: "funnel",
         type: "funnel",
         queryId: null,
-        pos: { x: 0, y: 3, w: 7, h: 2 },
-        display: {
-          title: "Pipeline funnel",
-          titleSize: 20,
-          subtitle: "HubSpot deals · this month",
-          headlineCaption: "new leads",
-        },
+        pos: { x: 0, y: 5, w: 7, h: 3 },
+        display: { title: "Pipeline funnel" },
       },
       {
         id: "ranking",
         type: "ranking",
         queryId: null,
-        pos: { x: 7, y: 3, w: 5, h: 2 },
-        display: {
-          title: "Sales team ranking",
-          titleSize: 20,
-          subtitle: "Closed-won revenue · live",
-          headlineCaption: "top performer",
-        },
+        pos: { x: 7, y: 5, w: 5, h: 3 },
+        display: { title: "Sales team ranking" },
       },
     ],
   };
