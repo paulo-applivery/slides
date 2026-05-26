@@ -12,6 +12,8 @@ import {
   WIDGET_ACCEPTS,
   type WidgetType,
 } from "@/lib/queries/compat";
+import { objectFromMetricId, type SourceObject } from "@/lib/queries/catalog";
+import type { Filter } from "@/lib/queries/ast";
 import {
   BarChart,
   FunnelChart,
@@ -58,16 +60,46 @@ type WidgetDisplay = {
    * optional saved `single` query. Stages with no `queryId` (or whose
    * query no longer exists / isn't compatible) render as 0 so the
    * shape of the funnel still communicates the configured pipeline.
+   *
+   * `dateField` (optional) overrides the bound query's own date field
+   * at execute time — useful when a pipeline uses created date for
+   * top-of-funnel stages but the "Won" stage should filter by close
+   * date instead. When omitted, the executor falls back to the
+   * query's saved dateField.
+   *
+   * `timePeriod` (optional) overrides the widget-level time window
+   * for this stage only — lets a funnel mix "Leads from the last 90
+   * days" with "Deals won this quarter" in a single tile. When
+   * omitted, falls back to `display.timePeriod`, then the saved
+   * query's dateRange.
    */
-  stages?: Array<{ id: string; label: string; queryId: string | null }>;
+  stages?: Array<{
+    id: string;
+    label: string;
+    queryId: string | null;
+    dateField?: string;
+    timePeriod?: TimePeriod;
+  }>;
   /**
-   * Widget-level filter overlay. AND'd with the bound query's own
-   * `config.filters` at execute time. Lets one saved query power
-   * multiple widgets with different scopes (e.g. "Closed Won this
-   * month" + "Closed Won Sales team" from the same metric). Schema
-   * matches QueryConfig.filters.
+   * Widget-level filter overlay (LEGACY shape — applies to every
+   * query the widget runs regardless of object). Kept for backward
+   * compat. New saves go to `filtersByObject` below.
    */
   filters?: import("@/lib/queries/ast").Filter[];
+  /**
+   * Per-object filter overlays. The executor picks the list whose
+   * key matches the query's object (deals / contacts / charges) and
+   * passes it as `extraFilters`. Lets a funnel widget that mixes a
+   * `Contacts created` stage with a `Deals won` stage apply
+   * different filters to each — e.g. `lifecycleStage = lead` on
+   * contacts AND `stage = closedwon` on deals, all from one tile.
+   */
+  filtersByObject?: Partial<
+    Record<
+      import("@/lib/queries/catalog").SourceObject,
+      import("@/lib/queries/ast").Filter[]
+    >
+  >;
 };
 
 /**
@@ -120,25 +152,22 @@ export async function WidgetTile({
 
   if (bound) {
     try {
+      // Resolve the query's object via objectFromMetricId so we can
+      // pick the matching per-object filter list — a contacts query
+      // gets `filtersByObject.contacts`, a deals query gets
+      // `filtersByObject.deals`, etc. `pickExtraFilters` falls back
+      // to the legacy flat `display.filters` for widgets saved
+      // before the per-object split.
+      const boundConfig = bound.config as { source: "stripe" | "hubspot"; metric: string };
+      const queryObject = objectFromMetricId(boundConfig.source, boundConfig.metric);
       executorResult = await runQuery(
         workspaceId,
         bound.config as Parameters<typeof runQuery>[1],
-        // When the widget has its own time period, resolve it now and
-        // pass concrete dates as an override — beats the query's
-        // `dateRange`. Without this, the picker UI looked like it
-        // worked but the executor kept honouring the saved query's
-        // window, producing "different data" between the two paths.
-        //
-        // `extraFilters` layers any widget-defined filter overlay on
-        // top of the query's own filters (AND'd in the executor).
         {
           dateOverride: display.timePeriod
             ? toDateWindow(display.timePeriod)
             : undefined,
-          extraFilters:
-            display.filters && display.filters.length > 0
-              ? display.filters
-              : undefined,
+          extraFilters: pickExtraFilters(display, queryObject),
         },
       );
     } catch (err) {
@@ -173,9 +202,23 @@ export async function WidgetTile({
             currentTimePeriod={display.timePeriod}
             currentTarget={display.target}
             currentFilters={display.filters}
+            currentFiltersByObject={display.filtersByObject}
             boundQuerySource={bound ? (bound.source as "stripe" | "hubspot") : undefined}
             boundQueryMetric={
               bound ? ((bound.config as { metric: string }).metric) : undefined
+            }
+            queriedScopes={
+              bound
+                ? [
+                    {
+                      source: bound.source as "stripe" | "hubspot",
+                      object: objectFromMetricId(
+                        bound.source as "stripe" | "hubspot",
+                        (bound.config as { metric: string }).metric,
+                      ),
+                    },
+                  ]
+                : []
             }
           />
         ) : undefined
@@ -366,6 +409,29 @@ function renderSeedFallback(widget: Widget, display: WidgetDisplay) {
  * the filter is inclusive of the last day (HubSpot deal close dates are
  * timestamps).
  */
+/**
+ * Pick the filter overlay that should apply to a query of `object`.
+ *
+ * Order of preference:
+ *   1. `display.filtersByObject[object]` — per-object filters added
+ *      via the dialog's new two-section editor
+ *   2. `display.filters`               — legacy "applies to all" list
+ *      kept around for widgets saved before the per-object split
+ *
+ * Returns `undefined` when there's nothing to apply (lets the
+ * executor skip the filter pass entirely).
+ */
+function pickExtraFilters(
+  display: WidgetDisplay,
+  object: SourceObject,
+): Filter[] | undefined {
+  const perObject = display.filtersByObject?.[object];
+  if (perObject && perObject.length > 0) return perObject;
+  const legacy = display.filters;
+  if (legacy && legacy.length > 0) return legacy;
+  return undefined;
+}
+
 function toDateWindow(tp: TimePeriod): {
   from: Date | null;
   to: Date | null;
@@ -442,22 +508,32 @@ async function FunnelTile({
       const q = byId.get(s.queryId);
       if (!q) return { label: s.label, value: 0 };
       try {
-        const res = await runQuery(
-          workspaceId,
-          q.config as Parameters<typeof runQuery>[1],
-          {
-            dateOverride: display.timePeriod
-              ? toDateWindow(display.timePeriod)
-              : undefined,
-            // Funnel-level extra filters apply to every stage so the
-            // whole pipeline gets scoped together — e.g. "Sales team
-            // only" filters all of Leads → MQL → SQL → Won at once.
-            extraFilters:
-              display.filters && display.filters.length > 0
-                ? display.filters
-                : undefined,
-          },
+        // Pick the right filter overlay for this stage's object —
+        // contacts stages get `filtersByObject.contacts`, deals
+        // stages get `filtersByObject.deals`. Mixed-source funnels
+        // ("Contacts created" → "Deals won") finally have a way to
+        // apply different scopes per stage from a single Filter tab.
+        const stageConfig = q.config as { source: "stripe" | "hubspot"; metric: string };
+        const stageObject = objectFromMetricId(
+          stageConfig.source,
+          stageConfig.metric,
         );
+        // Per-stage dateField override — when the operator set one
+        // ("Won" uses closeDate, top-of-funnel stages use
+        // createdAt), spread it onto the config so the executor's
+        // window filter targets the right column.
+        const baseConfig = q.config as Parameters<typeof runQuery>[1];
+        const stageCfg = s.dateField
+          ? ({ ...baseConfig, dateField: s.dateField } as typeof baseConfig)
+          : baseConfig;
+        // Per-stage time period wins over the widget-level period.
+        // Lets a funnel mix "Leads in the last 90 days" with "Deals
+        // won this quarter" without splitting into multiple widgets.
+        const effectiveTp = s.timePeriod ?? display.timePeriod;
+        const res = await runQuery(workspaceId, stageCfg, {
+          dateOverride: effectiveTp ? toDateWindow(effectiveTp) : undefined,
+          extraFilters: pickExtraFilters(display, stageObject),
+        });
         if (res.kind !== "single") {
           // Wrong query shape — render 0 rather than throwing so the
           // funnel can keep working while the operator fixes the
@@ -481,6 +557,34 @@ async function FunnelTile({
   const stagesForChart =
     stages.length === 0 ? [...SEED.funnel] : runs;
 
+  // Distinct (source, object) scopes across all stage queries. A
+  // homogeneous funnel (all deals) collapses to one scope and the
+  // Filters tab shows one section. A mixed funnel (contacts →
+  // deals) yields two scopes and the Filters tab shows one section
+  // per object so the operator can add deal filters AND contact
+  // filters that apply to the matching stages.
+  const queriedScopes: Array<{
+    source: "stripe" | "hubspot";
+    object: SourceObject;
+  }> = [];
+  const seenScopes = new Set<string>();
+  for (const r of rows) {
+    const cfg = r.config as { source: "stripe" | "hubspot"; metric: string };
+    const o = objectFromMetricId(cfg.source, cfg.metric);
+    const key = `${cfg.source}:${o}`;
+    if (!seenScopes.has(key)) {
+      seenScopes.add(key);
+      queriedScopes.push({ source: cfg.source, object: o });
+    }
+  }
+
+  // For the Filters tab's "single source" picker (used when there's
+  // only one scope), the first scope wins. The dialog also receives
+  // the full scope list to render multi-object funnels properly.
+  const firstBoundConfig = rows[0]?.config as
+    | { source: "stripe" | "hubspot"; metric: string }
+    | undefined;
+
   return (
     <WidgetShell
       title={resolvedTitle}
@@ -503,6 +607,11 @@ async function FunnelTile({
             currentTimePeriod={display.timePeriod}
             currentTarget={display.target}
             currentStages={stages}
+            currentFilters={display.filters}
+            currentFiltersByObject={display.filtersByObject}
+            boundQuerySource={firstBoundConfig?.source}
+            boundQueryMetric={firstBoundConfig?.metric}
+            queriedScopes={queriedScopes}
           />
         ) : undefined
       }

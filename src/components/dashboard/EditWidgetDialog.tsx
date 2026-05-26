@@ -8,7 +8,7 @@ import {
   getWidgetFilterContext,
   listQueriesForPicker,
 } from "@/lib/queries/actions";
-import { objectFromMetricId } from "@/lib/queries/catalog";
+import { dateFieldsForSource, objectFromMetricId } from "@/lib/queries/catalog";
 import { FiltersEditor } from "@/components/queries/FiltersEditor";
 import type { Filter } from "@/lib/queries/ast";
 import {
@@ -22,7 +22,64 @@ import { TimePeriodPicker } from "./TimePeriodPicker";
 import type { TimePeriod } from "@/lib/timePeriod";
 
 /** Funnel stage row — `queryId === null` means the operator hasn't picked one yet. */
-type StageRow = { id: string; label: string; queryId: string | null };
+type StageRow = {
+  id: string;
+  label: string;
+  queryId: string | null;
+  /** Optional override of the stage query's saved dateField. */
+  dateField?: string;
+  /**
+   * Optional per-stage time-window override. When unset, the stage
+   * uses the widget-level `display.timePeriod`. When that's also
+   * unset, it falls back to the saved query's dateRange.
+   */
+  timePeriod?: TimePeriod;
+};
+
+/**
+ * Preset time-window options for per-stage overrides. We keep the
+ * row-level picker simple (a single select) rather than embedding
+ * the full TimePeriodPicker per row — operators almost always pick
+ * one of these common windows. The full picker is still available
+ * for the widget-level period in the Time period tab.
+ */
+const STAGE_PERIOD_PRESETS: ReadonlyArray<{
+  key: string;
+  label: string;
+  tp: TimePeriod;
+}> = [
+  { key: "current:day", label: "Today", tp: { kind: "current", granularity: "day" } },
+  { key: "previous:day", label: "Yesterday", tp: { kind: "previous", granularity: "day" } },
+  { key: "rolling:7:day", label: "Last 7 days", tp: { kind: "rolling", n: 7, granularity: "day" } },
+  { key: "rolling:30:day", label: "Last 30 days", tp: { kind: "rolling", n: 30, granularity: "day" } },
+  { key: "rolling:90:day", label: "Last 90 days", tp: { kind: "rolling", n: 90, granularity: "day" } },
+  { key: "current:week", label: "This week", tp: { kind: "current", granularity: "week" } },
+  { key: "current:month", label: "This month", tp: { kind: "current", granularity: "month" } },
+  { key: "previous:month", label: "Last month", tp: { kind: "previous", granularity: "month" } },
+  { key: "current:quarter", label: "This quarter", tp: { kind: "current", granularity: "quarter" } },
+  { key: "previous:quarter", label: "Last quarter", tp: { kind: "previous", granularity: "quarter" } },
+  { key: "current:year", label: "This year", tp: { kind: "current", granularity: "year" } },
+  { key: "previous:year", label: "Last year", tp: { kind: "previous", granularity: "year" } },
+  { key: "allTime", label: "All time", tp: { kind: "allTime" } },
+];
+
+/**
+ * Match a saved `TimePeriod` against the preset list so the dropdown
+ * shows the right option as selected. Falls back to "" (widget
+ * default) for unrecognised shapes — the saved value is still kept,
+ * just not visible as a preset.
+ */
+function stageTimePeriodKey(tp: TimePeriod | undefined): string {
+  if (!tp) return "";
+  if (tp.kind === "current") return `current:${tp.granularity}`;
+  if (tp.kind === "previous") return `previous:${tp.granularity}`;
+  if (tp.kind === "next") return `next:${tp.granularity}`;
+  if (tp.kind === "rolling") return `rolling:${tp.n}:${tp.granularity}`;
+  if (tp.kind === "toDate") return `toDate:${tp.granularity}`;
+  if (tp.kind === "allTime") return "allTime";
+  if (tp.kind === "fixed") return `fixed:${tp.start}:${tp.end}`;
+  return "";
+}
 
 /**
  * Tabbed widget editor — Display + Time period today; future tabs (Data,
@@ -49,8 +106,10 @@ export function EditWidgetDialog({
   currentTarget,
   currentStages,
   currentFilters,
+  currentFiltersByObject,
   boundQuerySource,
   boundQueryMetric,
+  queriedScopes,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -68,8 +127,12 @@ export function EditWidgetDialog({
   currentTarget?: number;
   /** Funnel-only: stored stages with their per-stage query bindings. */
   currentStages?: StageRow[];
-  /** Per-widget filter overlay (AND'd with the query's own filters). */
+  /** Legacy flat filter overlay (applies to all queries). */
   currentFilters?: Filter[];
+  /** New per-object filter overlays, keyed by SourceObject. */
+  currentFiltersByObject?: Partial<
+    Record<import("@/lib/queries/catalog").SourceObject, Filter[]>
+  >;
   /**
    * Source/metric of the bound query. Used by the Filters tab to scope
    * the field menu (HubSpot deals vs contacts, Stripe charges). When
@@ -78,6 +141,16 @@ export function EditWidgetDialog({
    */
   boundQuerySource?: "stripe" | "hubspot";
   boundQueryMetric?: string;
+  /**
+   * Distinct (source, object) pairs the widget queries. Drives the
+   * per-object filter sections — one section per scope, so a
+   * mixed-source funnel ("Contacts created" → "Deals won") shows
+   * a Contact filters section AND a Deal filters section.
+   */
+  queriedScopes?: Array<{
+    source: "stripe" | "hubspot";
+    object: import("@/lib/queries/catalog").SourceObject;
+  }>;
 }) {
   // Display state
   const [title, setTitle] = useState(currentTitle);
@@ -114,10 +187,17 @@ export function EditWidgetDialog({
   const isFunnel = widgetType === "funnel";
   const [stages, setStages] = useState<StageRow[]>(currentStages ?? []);
 
-  // Per-widget filter overlay state. The filter editor is only useful
-  // when the widget is bound to a real query — boundQuerySource gives
-  // us the source/object scoping the field menu needs.
-  const [filters, setFilters] = useState<Filter[]>(currentFilters ?? []);
+  // Per-widget filter overlay state — keyed by SourceObject so a
+  // funnel widget can keep "Deal filters" and "Contact filters" in
+  // separate lists, each applied to the matching stages at execute
+  // time. On hydrate we seed `filtersByObject` from the new shape
+  // OR migrate the legacy flat `currentFilters` into every scope
+  // the widget queries (so existing widgets keep their filters
+  // working — they just apply equally to all stages, same as
+  // before the per-object split).
+  const [filtersByObject, setFiltersByObject] = useState<
+    Partial<Record<import("@/lib/queries/catalog").SourceObject, Filter[]>>
+  >(() => seedFiltersByObject(currentFilters, currentFiltersByObject, queriedScopes));
 
   const [tab, setTab] = useState<
     "display" | "time" | "filters" | "stages"
@@ -146,7 +226,9 @@ export function EditWidgetDialog({
     setTarget(currentTarget ?? 100_000);
 
     setStages(currentStages ?? []);
-    setFilters(currentFilters ?? []);
+    setFiltersByObject(
+      seedFiltersByObject(currentFilters, currentFiltersByObject, queriedScopes),
+    );
 
     setTab("display");
   }, [
@@ -159,6 +241,8 @@ export function EditWidgetDialog({
     currentTarget,
     currentStages,
     currentFilters,
+    currentFiltersByObject,
+    queriedScopes,
   ]);
 
   function save() {
@@ -197,9 +281,13 @@ export function EditWidgetDialog({
             ? stages
             : null
           : undefined,
-        // Widget-level filter overlay. `null` clears it; an empty
-        // array also clears it server-side.
-        filters: filters.length > 0 ? filters : null,
+        // Always clear the legacy flat list — we've now migrated to
+        // the per-object shape. The server drops empty values from
+        // `filtersByObject` for us so an "all empty" save still
+        // collapses cleanly.
+        filters: null,
+        filtersByObject:
+          Object.keys(filtersByObject).length > 0 ? filtersByObject : null,
       });
       onOpenChange(false);
     });
@@ -329,10 +417,23 @@ export function EditWidgetDialog({
 
           {tab === "filters" && (
             <WidgetFiltersTab
-              filters={filters}
-              onChange={setFilters}
-              source={boundQuerySource}
-              metric={boundQueryMetric}
+              filtersByObject={filtersByObject}
+              onChange={setFiltersByObject}
+              scopes={
+                queriedScopes && queriedScopes.length > 0
+                  ? queriedScopes
+                  : boundQuerySource && boundQueryMetric
+                    ? [
+                        {
+                          source: boundQuerySource,
+                          object: objectFromMetricId(
+                            boundQuerySource,
+                            boundQueryMetric,
+                          ),
+                        },
+                      ]
+                    : []
+              }
               isFunnel={isFunnel}
             />
           )}
@@ -813,28 +914,63 @@ function DisplayTab(props: {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type FilterContext = Awaited<ReturnType<typeof getWidgetFilterContext>>;
+type SourceObject = import("@/lib/queries/catalog").SourceObject;
+type FiltersMap = Partial<Record<SourceObject, Filter[]>>;
+
+/**
+ * Seed the filtersByObject map on dialog open.
+ *
+ * Order of preference:
+ *   1. `filtersByObject` already has a value — use it as-is.
+ *   2. Legacy flat `filters` is present — copy it to every scope the
+ *      widget queries so the operator sees their old filter rendered
+ *      under both Deal and Contact sections (mixed-source funnels).
+ *      Save-time will move it into `filtersByObject` cleanly.
+ *   3. Nothing saved — empty map.
+ */
+function seedFiltersByObject(
+  legacy: Filter[] | undefined,
+  perObject: FiltersMap | undefined,
+  scopes: Array<{ source: string; object: SourceObject }> | undefined,
+): FiltersMap {
+  if (perObject && Object.keys(perObject).length > 0) {
+    return { ...perObject };
+  }
+  if (legacy && legacy.length > 0 && scopes && scopes.length > 0) {
+    const out: FiltersMap = {};
+    for (const s of scopes) {
+      out[s.object] = [...legacy];
+    }
+    return out;
+  }
+  return {};
+}
+
+const OBJECT_LABEL: Record<SourceObject, string> = {
+  deals: "Deal filters",
+  contacts: "Contact filters",
+  charges: "Charge filters",
+};
 
 function WidgetFiltersTab({
-  filters,
+  filtersByObject,
   onChange,
-  source,
-  metric,
+  scopes,
   isFunnel,
 }: {
-  filters: Filter[];
-  onChange: (next: Filter[]) => void;
-  source: "stripe" | "hubspot" | undefined;
-  metric: string | undefined;
+  filtersByObject: FiltersMap;
+  onChange: (next: FiltersMap) => void;
+  scopes: Array<{ source: "stripe" | "hubspot"; object: SourceObject }>;
   isFunnel: boolean;
 }) {
   const [ctx, setCtx] = useState<FilterContext | null>(null);
 
   // Lazy-load filter context (custom HubSpot fields + live enum
-  // options) on first paint of this tab. Same pattern as the
-  // FunnelStagesTab query list.
+  // options) on first paint of this tab.
+  const needsHubspotContext = scopes.some((s) => s.source === "hubspot");
   useEffect(() => {
     let alive = true;
-    if (source === "hubspot") {
+    if (needsHubspotContext) {
       getWidgetFilterContext()
         .then((v) => {
           if (alive) setCtx(v);
@@ -848,8 +984,7 @@ function WidgetFiltersTab({
             });
         });
     } else {
-      // Stripe (and unbound) need no async context — the standard
-      // SOURCE_FIELDS catalogue covers everything filterable.
+      // Stripe-only / unbound — standard SOURCE_FIELDS covers everything.
       setCtx({
         hubspotAllowed: undefined,
         hubspotCustomFields: [],
@@ -859,11 +994,11 @@ function WidgetFiltersTab({
     return () => {
       alive = false;
     };
-  }, [source]);
+  }, [needsHubspotContext]);
 
-  // Without a bound query we can't scope the field menu — tell the
-  // operator to bind one first instead of showing a useless picker.
-  if (!source || !metric) {
+  // No bound queries → no fields to filter on. Tell the operator
+  // to bind first.
+  if (scopes.length === 0) {
     return (
       <div>
         <SectionLabel style={{ marginBottom: 12 }}>Filters</SectionLabel>
@@ -886,32 +1021,29 @@ function WidgetFiltersTab({
     );
   }
 
-  const object = objectFromMetricId(source, metric);
+  function setForObject(object: SourceObject, next: Filter[]) {
+    const updated: FiltersMap = { ...filtersByObject };
+    if (next.length === 0) {
+      delete updated[object];
+    } else {
+      updated[object] = next;
+    }
+    onChange(updated);
+  }
 
   return (
-    <div>
-      <SectionLabel
-        style={{ marginBottom: 12 }}
-        right={
-          <span className="t-small" style={{ color: "var(--text-muted)" }}>
-            {filters.length} filter{filters.length === 1 ? "" : "s"}
-          </span>
-        }
-      >
-        Filters
-      </SectionLabel>
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       <p
         className="t-small"
         style={{
           color: "var(--text-muted)",
-          margin: "0 0 14px",
+          margin: 0,
           lineHeight: 1.5,
         }}
       >
-        Layered on top of the bound query&apos;s own filters.{" "}
-        {isFunnel
-          ? "Applied to every funnel stage so the whole pipeline gets scoped together."
-          : "One query, many widgets — point each widget at a different slice."}
+        {scopes.length > 1
+          ? "This widget queries multiple HubSpot objects. Add filters per object — each section applies only to the stages aggregating that object."
+          : "Layered on top of the bound query's own filters. One query, many widgets — point each at a different slice."}
       </p>
       {ctx === null ? (
         <p
@@ -921,15 +1053,47 @@ function WidgetFiltersTab({
           Loading filter options…
         </p>
       ) : (
-        <FiltersEditor
-          source={source}
-          object={object}
-          filters={filters}
-          onChange={onChange}
-          allowedFields={ctx.hubspotAllowed}
-          customFields={ctx.hubspotCustomFields}
-          standardEnumOptions={ctx.hubspotEnumOverrides}
-        />
+        scopes.map((scope) => {
+          const list = filtersByObject[scope.object] ?? [];
+          return (
+            <div key={`${scope.source}:${scope.object}`}>
+              <SectionLabel
+                style={{ marginBottom: 10 }}
+                right={
+                  <span
+                    className="t-small"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {list.length} filter{list.length === 1 ? "" : "s"}
+                  </span>
+                }
+              >
+                {OBJECT_LABEL[scope.object] ?? "Filters"}
+              </SectionLabel>
+              <FiltersEditor
+                source={scope.source}
+                object={scope.object}
+                filters={list}
+                onChange={(next) => setForObject(scope.object, next)}
+                allowedFields={
+                  scope.source === "hubspot"
+                    ? ctx.hubspotAllowed
+                    : undefined
+                }
+                customFields={
+                  scope.source === "hubspot"
+                    ? ctx.hubspotCustomFields
+                    : []
+                }
+                standardEnumOptions={
+                  scope.source === "hubspot"
+                    ? ctx.hubspotEnumOverrides
+                    : {}
+                }
+              />
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -1026,73 +1190,180 @@ function FunnelStagesTab({
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {stages.map((s, idx) => (
-          <div
-            key={s.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr 1.4fr auto auto",
-              gap: 8,
-              alignItems: "center",
-              padding: 10,
-              background: "var(--bg-elev-2)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-            }}
-          >
-            <span
-              className="t-mono"
+        {stages.map((s, idx) => {
+          // Lookup the picked query so we can scope the date-field
+          // dropdown to its source + object (deal queries get
+          // closeDate/createdAt; contact queries get createdAt; etc.).
+          const stageQuery = s.queryId
+            ? singleQueries.find((q) => q.id === s.queryId)
+            : undefined;
+          const dateFieldChoices =
+            stageQuery && stageQuery.metric
+              ? dateFieldsForSource(
+                  stageQuery.source as "stripe" | "hubspot",
+                  objectFromMetricId(
+                    stageQuery.source as "stripe" | "hubspot",
+                    stageQuery.metric,
+                  ),
+                )
+              : [];
+          return (
+            <div
+              key={s.id}
               style={{
-                width: 22,
-                height: 22,
                 display: "grid",
-                placeItems: "center",
-                background: "var(--bg)",
+                // 7 columns now: badge / label / query / dateField /
+                // period / move / remove. The growable columns (label,
+                // query, dateField, period) share `4.2fr` so each gets
+                // roughly equal space on the 560px dialog.
+                gridTemplateColumns:
+                  "auto 1fr 1.2fr 1fr 1fr auto auto",
+                gap: 8,
+                alignItems: "center",
+                padding: 10,
+                background: "var(--bg-elev-2)",
                 border: "1px solid var(--border)",
-                borderRadius: 6,
-                fontSize: 11,
-                color: "var(--text-tertiary)",
-              }}
-              aria-label={`Stage ${idx + 1}`}
-            >
-              {idx + 1}
-            </span>
-            <input
-              type="text"
-              value={s.label}
-              onChange={(e) => updateAt(idx, { label: e.target.value })}
-              placeholder="e.g. Leads"
-              maxLength={40}
-              style={{
-                ...textInputStyle,
-                padding: "8px 10px",
-                fontSize: 13,
-              }}
-            />
-            <select
-              value={s.queryId ?? ""}
-              onChange={(e) =>
-                updateAt(idx, { queryId: e.target.value || null })
-              }
-              style={{
-                ...textInputStyle,
-                padding: "8px 10px",
-                fontSize: 13,
-                appearance: "none",
+                borderRadius: 10,
               }}
             >
-              <option value="">— No query (renders 0) —</option>
-              {queries === null && (
-                <option value="" disabled>
-                  Loading queries…
-                </option>
-              )}
-              {singleQueries.map((q) => (
-                <option key={q.id} value={q.id}>
-                  {q.name}
-                </option>
-              ))}
-            </select>
+              <span
+                className="t-mono"
+                style={{
+                  width: 22,
+                  height: 22,
+                  display: "grid",
+                  placeItems: "center",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  color: "var(--text-tertiary)",
+                }}
+                aria-label={`Stage ${idx + 1}`}
+              >
+                {idx + 1}
+              </span>
+              <input
+                type="text"
+                value={s.label}
+                onChange={(e) => updateAt(idx, { label: e.target.value })}
+                placeholder="e.g. Leads"
+                maxLength={40}
+                style={{
+                  ...textInputStyle,
+                  padding: "8px 10px",
+                  fontSize: 13,
+                }}
+              />
+              <select
+                value={s.queryId ?? ""}
+                onChange={(e) => {
+                  // Picking a new query invalidates the previous
+                  // dateField override (it may not exist on the new
+                  // query's source). Clear it so the new query's
+                  // default kicks in.
+                  updateAt(idx, {
+                    queryId: e.target.value || null,
+                    dateField: undefined,
+                  });
+                }}
+                style={{
+                  ...textInputStyle,
+                  padding: "8px 10px",
+                  fontSize: 13,
+                  appearance: "none",
+                }}
+              >
+                <option value="">— No query (renders 0) —</option>
+                {queries === null && (
+                  <option value="" disabled>
+                    Loading queries…
+                  </option>
+                )}
+                {singleQueries.map((q) => (
+                  <option key={q.id} value={q.id}>
+                    {q.name}
+                  </option>
+                ))}
+              </select>
+              {/* Per-stage date-field override. Empty option = "use
+                  the query's saved dateField" — the common case for
+                  most stages. Operators only override when one stage
+                  should filter by a different timestamp (e.g. a
+                  "Won" stage filtering by closeDate while top-of-
+                  funnel stages filter by createdAt). */}
+              <select
+                value={s.dateField ?? ""}
+                onChange={(e) =>
+                  updateAt(idx, {
+                    dateField: e.target.value || undefined,
+                  })
+                }
+                disabled={!stageQuery || dateFieldChoices.length <= 1}
+                title={
+                  !stageQuery
+                    ? "Pick a query first to choose a date field."
+                    : dateFieldChoices.length <= 1
+                      ? "Only one date field available for this query's source."
+                      : "Override the bound query's date field for this stage."
+                }
+                style={{
+                  ...textInputStyle,
+                  padding: "8px 10px",
+                  fontSize: 13,
+                  appearance: "none",
+                  opacity:
+                    !stageQuery || dateFieldChoices.length <= 1 ? 0.5 : 1,
+                  cursor:
+                    !stageQuery || dateFieldChoices.length <= 1
+                      ? "not-allowed"
+                      : "pointer",
+                }}
+              >
+                <option value="">Default date field</option>
+                {dateFieldChoices.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+              {/* Per-stage time-period override. Empty value =
+                  "use the widget-level time period" (the common
+                  case for most stages). Picking a preset narrows
+                  this stage to that window regardless of what the
+                  widget's Time period tab is set to. Useful when
+                  the funnel mixes long-window stages (Leads in
+                  Last 90 days) with short-window ones (Won this
+                  quarter). */}
+              <select
+                value={stageTimePeriodKey(s.timePeriod)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) {
+                    updateAt(idx, { timePeriod: undefined });
+                    return;
+                  }
+                  const preset = STAGE_PERIOD_PRESETS.find(
+                    (p) => p.key === v,
+                  );
+                  if (preset) updateAt(idx, { timePeriod: preset.tp });
+                }}
+                title="Override the widget-level time period for this stage."
+                style={{
+                  ...textInputStyle,
+                  padding: "8px 10px",
+                  fontSize: 13,
+                  appearance: "none",
+                  cursor: "pointer",
+                }}
+              >
+                <option value="">Widget period</option>
+                {STAGE_PERIOD_PRESETS.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <button
                 type="button"
@@ -1136,7 +1407,8 @@ function FunnelStagesTab({
               <Icons.Close size={12} />
             </button>
           </div>
-        ))}
+        );
+        })}
       </div>
 
       <button

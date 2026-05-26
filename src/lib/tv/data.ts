@@ -22,7 +22,34 @@ import {
 } from "@/lib/db/schema";
 import { runQuery, type ExecutorResult } from "@/lib/queries/executor";
 import { resolveTimePeriod, type TimePeriod } from "@/lib/timePeriod";
-import type { QueryConfig } from "@/lib/queries/ast";
+import type { Filter, QueryConfig } from "@/lib/queries/ast";
+import {
+  objectFromMetricId,
+  type SourceObject,
+} from "@/lib/queries/catalog";
+
+/**
+ * Mirrors `WidgetTile.pickExtraFilters` — pick the per-object filter
+ * list if present, fall back to the legacy flat `filters` array. Kept
+ * inline here because tv/data.ts is server-only and WidgetTile is a
+ * server component too; the duplication is small and the alternative
+ * is a third "shared widget util" module.
+ */
+function pickExtraFilters(
+  display:
+    | {
+        filters?: Filter[];
+        filtersByObject?: Partial<Record<SourceObject, Filter[]>>;
+      }
+    | undefined,
+  object: SourceObject,
+): Filter[] | undefined {
+  const perObject = display?.filtersByObject?.[object];
+  if (perObject && perObject.length > 0) return perObject;
+  const legacy = display?.filters;
+  if (legacy && legacy.length > 0) return legacy;
+  return undefined;
+}
 
 export type TvWidgetResult =
   | {
@@ -151,8 +178,19 @@ export async function fetchTvSlideshowData(
       // executor kind.
       if (w.type === "funnel") {
         const stages =
-          (w.display as { stages?: Array<{ id: string; label: string; queryId: string | null }> } | undefined)
-            ?.stages ?? [];
+          (
+            w.display as
+              | {
+                  stages?: Array<{
+                    id: string;
+                    label: string;
+                    queryId: string | null;
+                    dateField?: string;
+                    timePeriod?: TimePeriod;
+                  }>;
+                }
+              | undefined
+          )?.stages ?? [];
         if (stages.length === 0) {
           // No stages configured — let the renderer fall back to SEED.
           return [d.id, w.id, { kind: "unbound" as const }] as const;
@@ -160,26 +198,41 @@ export async function fetchTvSlideshowData(
         const wDisplay = w.display as
           | {
               timePeriod?: TimePeriod;
-              filters?: import("@/lib/queries/ast").Filter[];
+              filters?: Filter[];
+              filtersByObject?: Partial<Record<SourceObject, Filter[]>>;
             }
           | undefined;
-        const tp = wDisplay?.timePeriod;
-        const extra = wDisplay?.filters;
-        const override = {
-          dateOverride: tp ? toDateWindow(tp) : undefined,
-          extraFilters: extra && extra.length > 0 ? extra : undefined,
-        };
+        const widgetTp = wDisplay?.timePeriod;
         const stageResults = await Promise.all(
           stages.map(async (s) => {
             if (!s.queryId) return { label: s.label, value: 0 };
             const q = queryById.get(s.queryId);
             if (!q) return { label: s.label, value: 0 };
             try {
-              const res = await runQuery(
-                workspaceId,
-                q.config as QueryConfig,
-                override,
+              // Per-stage filter routing — a contacts stage gets
+              // contact filters, a deals stage gets deal filters.
+              // The exact same logic WidgetTile applies in-app.
+              const baseCfg = q.config as QueryConfig;
+              const stageObject = objectFromMetricId(
+                baseCfg.source,
+                baseCfg.metric,
               );
+              // Per-stage dateField override — see WidgetTile for the
+              // closeDate vs createdAt motivation.
+              const cfg = s.dateField
+                ? ({
+                    ...baseCfg,
+                    dateField: s.dateField,
+                  } as QueryConfig)
+                : baseCfg;
+              // Per-stage timePeriod wins over the widget-level one.
+              const effectiveTp = s.timePeriod ?? widgetTp;
+              const res = await runQuery(workspaceId, cfg, {
+                dateOverride: effectiveTp
+                  ? toDateWindow(effectiveTp)
+                  : undefined,
+                extraFilters: pickExtraFilters(wDisplay, stageObject),
+              });
               if (res.kind !== "single") {
                 return { label: s.label, value: 0 };
               }
@@ -216,21 +269,25 @@ export async function fetchTvSlideshowData(
         // extra filters get passed to the executor so TV results
         // match the in-app preview. Without this, TV uses the saved
         // query's defaults and looks "different" from the editor.
+        // Per-object filter routing uses `pickExtraFilters` (see helper).
         const wDisplay = w.display as
           | {
               timePeriod?: TimePeriod;
-              filters?: import("@/lib/queries/ast").Filter[];
+              filters?: Filter[];
+              filtersByObject?: Partial<Record<SourceObject, Filter[]>>;
             }
           | undefined;
         const tp = wDisplay?.timePeriod;
-        const extra = wDisplay?.filters;
-        const res = await runQuery(workspaceId, q.config as QueryConfig, {
+        const cfg = q.config as QueryConfig;
+        const queryObject = objectFromMetricId(cfg.source, cfg.metric);
+        const res = await runQuery(workspaceId, cfg, {
           dateOverride: tp ? toDateWindow(tp) : undefined,
-          extraFilters: extra && extra.length > 0 ? extra : undefined,
+          extraFilters: pickExtraFilters(wDisplay, queryObject),
         });
         // Forward the conditional-color spec so the TV renderer can
         // resolve the hex against the widget's `display.target`.
-        const cfg = q.config as QueryConfig;
+        // (`cfg` already declared above for the per-object filter
+        // routing — reuse it here instead of redeclaring.)
         const conditionalColors = cfg.conditionalColors as
           | { colors: [string, string, string]; thresholds: [number, number] }
           | undefined;

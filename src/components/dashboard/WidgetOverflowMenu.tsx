@@ -3,7 +3,11 @@
 import { useState, useTransition } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icons } from "@/components/ui/Icon";
-import { bindWidget, removeWidget } from "@/lib/dashboards";
+import {
+  bindWidget,
+  duplicateWidget,
+  removeWidget,
+} from "@/lib/dashboards";
 import { QueryPickerDialog } from "./QueryPickerDialog";
 import { EditWidgetDialog } from "./EditWidgetDialog";
 import type { WidgetChip } from "./widgetChip";
@@ -30,8 +34,10 @@ export function WidgetOverflowMenu({
   currentTarget,
   currentStages,
   currentFilters,
+  currentFiltersByObject,
   boundQuerySource,
   boundQueryMetric,
+  queriedScopes,
 }: {
   dashboardId: string;
   widgetId: string;
@@ -61,11 +67,23 @@ export function WidgetOverflowMenu({
     queryId: string | null;
   }>;
   /**
-   * Per-widget filter overlay. Layered on top of the bound query's own
-   * filters at execute time. Edited in the Filters tab of the Edit
-   * Widget dialog.
+   * Legacy per-widget filter overlay. Layered on top of the bound
+   * query's own filters at execute time. Kept for widgets saved
+   * before the per-object split; new saves go to
+   * `currentFiltersByObject`.
    */
   currentFilters?: import("@/lib/queries/ast").Filter[];
+  /**
+   * Per-object filter overlay map. Each section in the dialog's
+   * Filters tab edits one entry here, routed to queries whose
+   * object matches at execute time.
+   */
+  currentFiltersByObject?: Partial<
+    Record<
+      import("@/lib/queries/catalog").SourceObject,
+      import("@/lib/queries/ast").Filter[]
+    >
+  >;
   /**
    * The bound query's source — feeds the filter editor's field menu so
    * a Stripe widget sees Stripe filters, a HubSpot widget sees HubSpot
@@ -79,6 +97,17 @@ export function WidgetOverflowMenu({
    * on what the query is actually aggregating.
    */
   boundQueryMetric?: string;
+  /**
+   * Distinct (source, object) pairs the widget queries. Single
+   * widgets pass one entry; funnels with mixed-source stages pass
+   * one per object. The Filters tab renders one section per scope,
+   * so a "Contacts created → Deals won" funnel gets a Contact
+   * filters section + a Deal filters section.
+   */
+  queriedScopes?: Array<{
+    source: "stripe" | "hubspot";
+    object: import("@/lib/queries/catalog").SourceObject;
+  }>;
 }) {
   // Funnel binds per stage in the Edit dialog — hide the top-level
   // "Bind a query" / "Unbind" items so operators don't get a useless
@@ -171,6 +200,20 @@ export function WidgetOverflowMenu({
             <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
             <DropdownMenu.Item
               onSelect={() =>
+                pick(() =>
+                  startTransition(async () => {
+                    await duplicateWidget(dashboardId, widgetId);
+                  }),
+                )
+              }
+              style={menuItemStyle("normal")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "")}
+            >
+              <Icons.Plus size={14} /> Duplicate widget
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onSelect={() =>
                 pick(() => {
                   if (!confirm(`Remove this ${widgetType} widget?`)) return;
                   startTransition(async () => {
@@ -208,8 +251,10 @@ export function WidgetOverflowMenu({
         currentTarget={currentTarget}
         currentStages={currentStages}
         currentFilters={currentFilters}
+        currentFiltersByObject={currentFiltersByObject}
         boundQuerySource={boundQuerySource}
         boundQueryMetric={boundQueryMetric}
+        queriedScopes={queriedScopes}
       />
     </>
   );

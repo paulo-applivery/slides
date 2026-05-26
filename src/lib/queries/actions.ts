@@ -90,19 +90,26 @@ export async function listQueriesForPicker() {
     .where(eq(queries.workspaceId, workspaceId))
     .orderBy(desc(queries.updatedAt));
 
-  // Pluck the discriminator out of the JSON for the picker filter — we don't
-  // ship the full Zod runtime to the client.
-  return rows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    source: r.source,
-    kind: ((r.config as { kind?: string } | null)?.kind ?? "single") as
-      | "single"
-      | "timeseries"
-      | "groupby",
-    summary: r.lastResult?.summary ?? null,
-    updatedAt: r.updatedAt,
-  }));
+  // Pluck the discriminator + metric out of the JSON for the picker
+  // filter. `metric` lets the dialog derive each bound query's object
+  // (deals / contacts) via `objectFromMetricId` so per-stage UIs (date
+  // field override, per-object filters) can scope correctly without
+  // re-fetching the full config.
+  return rows.map((r) => {
+    const cfg = (r.config as
+      | { kind?: string; metric?: string; dateField?: string }
+      | null) ?? {};
+    return {
+      id: r.id,
+      name: r.name,
+      source: r.source,
+      kind: (cfg.kind ?? "single") as "single" | "timeseries" | "groupby",
+      metric: cfg.metric ?? null,
+      defaultDateField: cfg.dateField ?? null,
+      summary: r.lastResult?.summary ?? null,
+      updatedAt: r.updatedAt,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

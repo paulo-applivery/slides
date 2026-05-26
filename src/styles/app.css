@@ -324,26 +324,31 @@ body { min-width: 1280px; }
 /* ---------- RANKING ---------- */
 /* Row height derives from the widget via cqh so 5 rows always fit. With
    the standard ranking widget showing 5 entries, --row-h * 5 ≈ 90% of
-   the widget body — leaves room for header/headline/foot. */
-.rank-list { position: relative; --row-h: clamp(26px, 12cqh, 68px); height: calc(5 * var(--row-h) + 8px); }
+   the widget body — leaves room for header/headline/foot.
+   The clamp() upper bounds are sized for TV viewing (10m away): on a
+   tall TV widget cqh resolves to ~80–140px row heights, names at
+   ~40–56px. Desktop dashboards (smaller widget) get the cqh fraction
+   to stay below the lower clamp, so they keep their current compact
+   sizing — only TV scales up. */
+.rank-list { position: relative; --row-h: 16cqh; height: calc(5 * var(--row-h) + 8px); }
 .rank-row {
   position: absolute; left: 0; right: 0; top: 0;
   transform: translateY(calc(var(--rank-pos, 0) * var(--row-h)));
   height: var(--row-h);
   display: grid;
-  grid-template-columns: clamp(24px, 4cqh, 44px) clamp(28px, 5cqh, 48px) 1fr;
+  grid-template-columns: clamp(24px, 4cqh, 88px) clamp(28px, 5cqh, 96px) 1fr;
   align-items: center;
-  gap: clamp(8px, 1.2cqw, 16px);
-  padding: 0 6px;
+  gap: clamp(8px, 1.2cqw, 36px);
+  padding: 0 clamp(6px, 0.8cqw, 16px);
   transition: transform 600ms cubic-bezier(0.34, 1.2, 0.64, 1);
 }
 .rank-num {
-  width: clamp(24px, 4cqh, 44px); height: clamp(24px, 4cqh, 44px);
+  width: clamp(24px, 4cqh, 88px); height: clamp(24px, 4cqh, 88px);
   display: grid; place-items: center;
   border-radius: 50%;
   background: var(--bg-elev-2);
   color: var(--text-tertiary);
-  font-size: clamp(11px, 2.2cqh, 18px);
+  font-size: clamp(11px, 2.2cqh, 40px);
   font-variant-numeric: tabular-nums;
 }
 .rank-num.rank-top {
@@ -352,17 +357,17 @@ body { min-width: 1280px; }
   box-shadow: 0 0 16px rgba(251,191,36,.4);
 }
 .rank-avatar {
-  width: clamp(28px, 5cqh, 48px); height: clamp(28px, 5cqh, 48px);
+  width: clamp(28px, 5cqh, 96px); height: clamp(28px, 5cqh, 96px);
   display: grid; place-items: center;
   border-radius: 50%;
-  font-size: clamp(11px, 2.2cqh, 16px); font-weight: 500; color: #fff;
+  font-size: clamp(11px, 2.2cqh, 40px); font-weight: 500; color: #fff;
   letter-spacing: 0.02em;
 }
-.rank-main { display: flex; flex-direction: column; gap: clamp(2px, 0.6cqh, 5px); min-width: 0; }
-.rank-name-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.rank-name { font-size: clamp(12px, 2.6cqh, 18px); color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rank-value { font-size: clamp(12px, 2.6cqh, 18px); color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rank-bar-track { position: relative; height: clamp(4px, 1cqh, 8px); background: var(--bg-elev-2); border-radius: 999px; overflow: hidden; }
+.rank-main { display: flex; flex-direction: column; gap: clamp(2px, 0.6cqh, 12px); min-width: 0; }
+.rank-name-row { display: flex; justify-content: space-between; align-items: baseline; gap: clamp(8px, 1.2cqw, 24px); }
+.rank-name { font-size: 6.6cqh; color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-value { font-size: 6.6cqh; color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank-bar-track { position: relative; height: clamp(4px, 1cqh, 18px); background: var(--bg-elev-2); border-radius: 999px; overflow: hidden; }
 .rank-bar {
   height: 100%;
   background: linear-gradient(90deg, var(--primary), var(--primary-hover));
@@ -371,7 +376,7 @@ body { min-width: 1280px; }
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .rank-bar-target { display: none; }
-.rank-meta { display: flex; justify-content: space-between; font-size: clamp(10px, 2cqh, 14px); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rank-meta { display: flex; justify-content: space-between; font-size: clamp(10px, 2cqh, 32px); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .rank-delta.up { color: var(--success); }
 .rank-delta.down { color: var(--danger); }
 

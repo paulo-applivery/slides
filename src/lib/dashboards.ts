@@ -195,6 +195,66 @@ export async function removeWidget(
   }));
 }
 
+/**
+ * Duplicate a widget on the same dashboard.
+ *
+ * Clones the entire widget shape — type, query binding, display blob
+ * (title / filters / stages / time period / chip / etc.) — gives it a
+ * fresh UUID, and places it directly below the source so the operator
+ * can see it without scrolling. Funnel stage ids are also re-minted
+ * so React keys don't collide between the original and the clone.
+ *
+ * Returns the new widget's id so the caller could focus it / open the
+ * editor on it if needed.
+ */
+export async function duplicateWidget(
+  dashboardId: string,
+  widgetId: string,
+): Promise<{ id: string } | null> {
+  const { workspaceId } = await requireEditor();
+  const newId = crypto.randomUUID();
+  let didDuplicate = false;
+  await mutateLayout(dashboardId, workspaceId, (current) => {
+    const src = current.widgets.find((w) => w.id === widgetId);
+    if (!src) return current;
+    didDuplicate = true;
+
+    // Re-mint funnel stage ids so the clone's stages don't share
+    // React keys with the original's stages. Other display fields
+    // are safe to copy verbatim — they don't reference widget id.
+    const display = src.display
+      ? structuredClone(src.display)
+      : undefined;
+    if (display && Array.isArray((display as { stages?: unknown }).stages)) {
+      const stages = (display as { stages: Array<{ id: string }> }).stages;
+      stages.forEach((s) => {
+        s.id = crypto.randomUUID();
+      });
+    }
+
+    // Drop the clone directly under the source — same x + width, one
+    // row below the source's bottom edge. Other widgets sitting in
+    // that space don't get pushed down (we'd need a full reflow for
+    // that); they overlap until the operator drags the clone
+    // somewhere. Same UX as Plecto/Looker — explicit > magical.
+    const dropY = src.pos.y + src.pos.h;
+
+    return {
+      widgets: [
+        ...current.widgets,
+        {
+          id: newId,
+          type: src.type,
+          queryId: src.queryId ?? null,
+          pos: { x: src.pos.x, y: dropY, w: src.pos.w, h: src.pos.h },
+          display,
+        },
+      ],
+    };
+  });
+  return didDuplicate ? { id: newId } : null;
+}
+
 /** Bind (or unbind, pass `null`) a widget to a saved query. */
 export async function bindWidget(
   dashboardId: string,
@@ -244,7 +304,19 @@ export async function updateWidgetDisplay(
      * entirely (widget falls back to SEED).
      */
     stages?:
-      | Array<{ id: string; label: string; queryId: string | null }>
+      | Array<{
+          id: string;
+          label: string;
+          queryId: string | null;
+          /** Optional override of the stage query's saved dateField. */
+          dateField?: string;
+          /**
+           * Optional per-stage time-window override. Wins over the
+           * widget-level `display.timePeriod` for this stage only.
+           * Persisted as the same shape the TimePeriodPicker emits.
+           */
+          timePeriod?: unknown;
+        }>
       | null;
     /**
      * Widget-level extra filters. AND'd with the bound query's own
@@ -252,8 +324,24 @@ export async function updateWidgetDisplay(
      * `null` clears the overlay. Replaces the whole array on every
      * patch — like `stages`, it's small and reorder/delete are all
      * just "save the new list".
+     *
+     * Legacy shape — applies to every query regardless of object.
+     * New saves prefer `filtersByObject` below.
      */
     filters?: import("@/lib/queries/ast").Filter[] | null;
+    /**
+     * Per-object filter overlays, keyed by SourceObject (deals /
+     * contacts / charges). Replaces the whole object on every
+     * patch. `null` clears all per-object filters; an empty
+     * object is treated the same. Individual object keys with `[]`
+     * or missing are treated as "no filters for that object".
+     */
+    filtersByObject?: Partial<
+      Record<
+        import("@/lib/queries/catalog").SourceObject,
+        import("@/lib/queries/ast").Filter[]
+      >
+    > | null;
   },
 ): Promise<void> {
   const { workspaceId } = await requireEditor();
@@ -289,6 +377,30 @@ export async function updateWidgetDisplay(
           nextDisplay.filters = patch.filters;
         }
       }
+      if (patch.filtersByObject !== undefined) {
+        if (
+          patch.filtersByObject === null ||
+          Object.keys(patch.filtersByObject).length === 0
+        ) {
+          delete nextDisplay.filtersByObject;
+        } else {
+          // Drop empty arrays so the persisted shape stays minimal —
+          // `{ deals: [], contacts: [...] }` becomes `{ contacts:
+          // [...] }`. If everything ends up empty, drop the whole
+          // key.
+          const compact: Record<string, unknown> = {};
+          for (const [obj, list] of Object.entries(patch.filtersByObject)) {
+            if (Array.isArray(list) && list.length > 0) {
+              compact[obj] = list;
+            }
+          }
+          if (Object.keys(compact).length === 0) {
+            delete nextDisplay.filtersByObject;
+          } else {
+            nextDisplay.filtersByObject = compact;
+          }
+        }
+      }
       if (patch.stages !== undefined) {
         if (patch.stages === null || patch.stages.length === 0) {
           delete nextDisplay.stages;
@@ -297,14 +409,43 @@ export async function updateWidgetDisplay(
           // coerce empty/whitespace queryIds to null so the renderer
           // can treat unbound stages uniformly. Cap at 12 stages —
           // beyond that a funnel chart loses readability anyway.
-          nextDisplay.stages = patch.stages.slice(0, 12).map((s) => ({
-            id: String(s.id || crypto.randomUUID()),
-            label: String(s.label ?? "").trim().slice(0, 40) || "Stage",
-            queryId:
-              typeof s.queryId === "string" && s.queryId.trim()
-                ? s.queryId
-                : null,
-          }));
+          nextDisplay.stages = patch.stages.slice(0, 12).map((s) => {
+            const out: {
+              id: string;
+              label: string;
+              queryId: string | null;
+              dateField?: string;
+              timePeriod?: unknown;
+            } = {
+              id: String(s.id || crypto.randomUUID()),
+              label: String(s.label ?? "").trim().slice(0, 40) || "Stage",
+              queryId:
+                typeof s.queryId === "string" && s.queryId.trim()
+                  ? s.queryId
+                  : null,
+            };
+            // Per-stage dateField override — only persist when the
+            // operator picked something. Empty string means "use the
+            // query's saved dateField" → drop the key so the saved
+            // blob stays small.
+            if (
+              typeof s.dateField === "string" &&
+              s.dateField.trim().length > 0
+            ) {
+              out.dateField = s.dateField.trim();
+            }
+            // Per-stage timePeriod override. Trust the caller's
+            // shape — TimePeriodPicker emits validated values and
+            // the executor's `resolveTimePeriod` already handles
+            // unknown discriminants defensively.
+            if (
+              s.timePeriod &&
+              typeof s.timePeriod === "object"
+            ) {
+              out.timePeriod = s.timePeriod;
+            }
+            return out;
+          });
         }
       }
       if (patch.title !== undefined) {
