@@ -42,3 +42,4 @@ next-env.d.ts
 
 # Cloudflare local state
 /.wrangler/
+/.open-next/
