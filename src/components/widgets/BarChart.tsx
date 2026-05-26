@@ -76,7 +76,13 @@ export function BarChart({ data }: BarChartProps) {
             }}
             labelStyle={{ color: t["--text-primary"], fontWeight: 500 }}
             itemStyle={{ fontFamily: "var(--font-mono)" }}
-            formatter={(v) => fmtEUR(Number(v))}
+            // Prefer the outputFormat-aware `formatted` string on the
+            // datum when available; falls back to the EUR formatter for
+            // SEED data and the "Previous" series (which has no formatted).
+            formatter={(v, _name, item) => {
+              const d = item?.payload as BarDatum | undefined;
+              return d?.formatted ?? fmtEUR(Number(v));
+            }}
           />
           <Bar dataKey="prev" name="Previous" radius={[3, 3, 0, 0]}>
             {data.map((d) => (

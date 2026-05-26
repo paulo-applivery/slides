@@ -106,6 +106,28 @@ export async function syncHubspotAction(): Promise<void> {
   revalidatePath("/dashboards");
 }
 
+/**
+ * One-shot full re-import.
+ *
+ * Clears the mirror tables and re-pulls from cursor=0, so an existing
+ * partial sync (whose `lastSyncedAt` would otherwise skip historical
+ * records) gets a clean backfill. Used when the operator notices the
+ * dashboard counts disagree with HubSpot and clicks "Re-import all".
+ *
+ * This can be slow for large portals — the sync now pages through
+ * every modified-since-cursor record until HubSpot stops returning
+ * one. We don't background it because /integrations is the right
+ * place to wait + see the result, and Cloudflare Workers have a
+ * 30-second wall-clock limit anyway.
+ */
+export async function reimportHubspotAction(): Promise<void> {
+  const { workspaceId } = await requireEditor();
+  await syncHubspot(workspaceId, { forceFull: true });
+  revalidatePath("/integrations");
+  revalidatePath("/dashboards");
+  revalidatePath("/queries");
+}
+
 export async function disconnectHubspotAction(): Promise<void> {
   const { workspaceId } = await requireEditor();
   await disconnectHubspot(workspaceId);

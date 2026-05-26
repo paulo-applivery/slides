@@ -40,17 +40,25 @@ export function RankingWidget({ reps }: { reps: Rep[] }) {
             <div className="rank-main">
               <div className="rank-name-row">
                 <span className="rank-name">{r.name}</span>
-                <span className="rank-value t-mono">{fmtEUR(r.value)}</span>
+                <span className="rank-value t-mono">
+                  {r.formatted ?? fmtEUR(r.value)}
+                </span>
               </div>
               <div className="rank-bar-track">
                 <div
                   className="rank-bar"
-                  style={{ width: `${Math.min(100, pctOfTarget * 100)}%` }}
+                  // Bar fill picks up the row's color (conditionalColors
+                  // hex when the wizard set them; the default palette
+                  // entry otherwise).
+                  style={{
+                    width: `${Math.min(100, pctOfTarget * 100)}%`,
+                    background: r.color,
+                  }}
                 />
               </div>
               <div className="rank-meta">
                 <span>
-                  {Math.round(pctOfTarget * 100)}% of {fmtEUR(r.target)} target
+                  {Math.round(pctOfTarget * 100)}% of top performer
                 </span>
                 <span className={`rank-delta ${r.delta >= 0 ? "up" : "down"}`}>
                   {r.delta >= 0 ? "↑" : "↓"} {Math.abs(r.delta)} this week

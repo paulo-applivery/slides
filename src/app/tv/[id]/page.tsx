@@ -41,9 +41,6 @@ export default async function TVPage({ params }: { params: { id: string } }) {
           <TVMode
             slideshow={data.slideshow}
             dashboardsById={data.dashboardsById}
-            workspaceName={data.workspaceName}
-            // No onUnpair: the exit button is a Link back to the editor
-            // (handled inside TVMode). Editors aren't really "paired".
           />
         );
       }

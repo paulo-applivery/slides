@@ -319,20 +319,69 @@
 .tv-status .tv-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 6px currentColor; }
 .tv-clock { color: var(--text-primary); font-size: 14px; }
 
-.tv-dots { display: flex; gap: 8px; align-items: center; }
-.tv-dot-prog { width: 32px; height: 4px; background: var(--bg-elev-2); border-radius: 2px; overflow: hidden; position: relative; }
-.tv-dot-prog.is-active { background: var(--bg-elev-3); }
-.tv-dot-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--primary); border-radius: 2px; animation: tv-progress 7s linear forwards; box-shadow: 0 0 6px var(--primary); }
-@keyframes tv-progress { from { width: 0; } to { width: 100%; } }
+/* Pixel-measured slide timer: a rounded edge-aligned rail fills clockwise
+   over exactly one active slide duration. */
+.tv-beam {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 150;
+}
+.tv-beam-rail,
+.tv-beam-progress-glow,
+.tv-beam-progress {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tv-beam-rail {
+  stroke: rgba(92, 139, 255, 0.09);
+  stroke-width: 1;
+}
+.tv-beam-progress-glow,
+.tv-beam-progress {
+  stroke-dashoffset: var(--tv-beam-perimeter);
+  animation: tv-beam-progress var(--tv-beam-duration) linear forwards;
+}
+.tv-beam-progress-glow {
+  stroke: rgba(92, 139, 255, 0.2);
+  stroke-width: 3;
+  filter: blur(3px) drop-shadow(0 0 6px rgba(92, 139, 255, 0.16));
+}
+.tv-beam-progress {
+  stroke: rgba(92, 139, 255, 0.5);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px rgba(92, 139, 255, 0.25));
+}
+@keyframes tv-beam-progress {
+  from { stroke-dashoffset: var(--tv-beam-perimeter); }
+  to { stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv-beam-progress-glow,
+  .tv-beam-progress {
+    display: none;
+  }
+}
 
 /* Slide stage */
 .tv-stage {
   position: relative;
   height: 100%;
-  padding-top: 72px;
+  /* No top/bottom padding here — the top chrome (workspace name +
+     clock) and bottom chrome (slide dots) are both gone. TV mode is
+     just the dashboard with the .tv-slide's own 24px padding for
+     breathing room. */
 }
 .tv-slide {
-  position: absolute; inset: 72px 0 80px;
+  /* Full-bleed within `.tv-stage` — top inset used to be 72px to
+     clear the workspace-name + clock chrome, bottom inset 24px for
+     post-footer breathing room. Both are gone; the .tv-slide is now
+     a clean 0-inset frame with 24px internal padding so the
+     dashboard sits 24px from every screen edge. */
+  position: absolute; inset: 0;
   /* 24px breathing room around the slide content. Applied to every slide
      (not just .is-active) so the layout doesn't reflow during the
      crossfade transition. */

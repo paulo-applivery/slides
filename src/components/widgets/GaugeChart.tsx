@@ -23,6 +23,13 @@ export type GaugeChartProps = {
   target: number;
   /** Set false to suppress the floating % pill (used in tight TV layouts). */
   showPill?: boolean;
+  /**
+   * Optional conditional color override. When set, the progress arc and
+   * the floating % pill use this hex instead of `var(--primary)`. Used
+   * by `WidgetTile` to apply `config.conditionalColors` based on % of
+   * target.
+   */
+  color?: string | null;
 };
 
 // Geometry constants (viewBox units; SVG scales to fit the parent)
@@ -35,7 +42,15 @@ const STROKE = 26;
 const START_DEG = 135; // bottom-left tip
 const SPAN_DEG = 270; // total arc span; gap at bottom = 90°
 
-export function GaugeChart({ value, target, showPill = true }: GaugeChartProps) {
+export function GaugeChart({
+  value,
+  target,
+  showPill = true,
+  color,
+}: GaugeChartProps) {
+  // Resolve once so the arc + pill share the same hex. `null` (no
+  // override) falls back to the design-system primary at render time.
+  const accent = color ?? "var(--primary)";
   const animated = useCountUp(value);
   const pct = target === 0 ? 0 : value / target;
   const animPct = Math.max(0, Math.min(1, target === 0 ? 0 : animated / target));
@@ -86,7 +101,7 @@ export function GaugeChart({ value, target, showPill = true }: GaugeChartProps) 
         {progPath && (
           <path
             d={progPath}
-            stroke="var(--primary)"
+            stroke={accent}
             strokeWidth={STROKE}
             fill="none"
             strokeLinecap="round"
@@ -133,7 +148,7 @@ export function GaugeChart({ value, target, showPill = true }: GaugeChartProps) 
 
         {/* Percentage pill — anchored to the tip of the progress arc.
             Drawn as SVG so it scales with the rest. */}
-        {showPill && <Pill x={pillX} y={pillY} pct={pctDisplay} />}
+        {showPill && <Pill x={pillX} y={pillY} pct={pctDisplay} accent={accent} />}
       </svg>
     </div>
   );
@@ -143,7 +158,17 @@ export function GaugeChart({ value, target, showPill = true }: GaugeChartProps) 
 // Pill (SVG rect + text)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Pill({ x, y, pct }: { x: number; y: number; pct: number }) {
+function Pill({
+  x,
+  y,
+  pct,
+  accent,
+}: {
+  x: number;
+  y: number;
+  pct: number;
+  accent: string;
+}) {
   // Width grows with digit count: 44 → "6%", 54 → "77%", 62 → "100%+".
   const label = `${pct}%`;
   const w = label.length <= 2 ? 44 : label.length === 3 ? 54 : 62;
@@ -162,7 +187,7 @@ function Pill({ x, y, pct }: { x: number; y: number; pct: number }) {
         width={w}
         height={h}
         rx={8}
-        fill="var(--primary)"
+        fill={accent}
       />
       <text
         x={0}

@@ -18,6 +18,19 @@ export type SingleValueProps = {
   deltaPct: number;
   period?: string;
   spark: number[];
+  /**
+   * Optional pre-formatted display string from the executor — when set,
+   * overrides the internal value+unit formatting. Used to honour
+   * `config.outputFormat` (Number / Currency / Percent / Yes-No /
+   * Duration) so the wizard's choice wins regardless of metric unit.
+   */
+  formatted?: string;
+  /**
+   * Optional conditional-color hex picked by
+   * `pickConditionalColor(value, target, spec)`. When `null` / undefined
+   * the value uses the design-system default.
+   */
+  valueColor?: string | null;
 };
 
 const TOKENS = ["--success", "--danger"] as const;
@@ -30,6 +43,8 @@ export function SingleValue({
   deltaPct,
   period = "vs last month",
   spark,
+  formatted,
+  valueColor,
 }: SingleValueProps) {
   const animated = useCountUp(value);
   const positive = (deltaPct ?? 0) >= 0;
@@ -37,12 +52,17 @@ export function SingleValue({
   const sparkColor = positive ? t["--success"] : t["--danger"];
   const sparkData = spark.map((v, i) => ({ i, v }));
 
+  // When the executor handed us a formatted string (Yes/No / Duration /
+  // explicit currency / percent) we trust it — animating these forms
+  // doesn't make sense ("3.5 mo" mid-tween). For raw numbers, keep the
+  // count-up animation by deriving from `animated`.
   const display =
-    unit === "€"
+    formatted ??
+    (unit === "€"
       ? fmtEUR(animated)
       : unit === "%"
         ? animated.toFixed(1) + "%"
-        : fmtInt(Math.round(animated));
+        : fmtInt(Math.round(animated)));
 
   // Deterministic gradient id (label + sign) so duplicate widgets each get
   // their own SVG gradient definition without colliding.
@@ -50,7 +70,12 @@ export function SingleValue({
 
   return (
     <div className="sv">
-      <div className="sv-value">{display}</div>
+      <div
+        className="sv-value"
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {display}
+      </div>
       <div className="sv-spark">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={sparkData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>

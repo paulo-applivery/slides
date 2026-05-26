@@ -14,6 +14,10 @@ import { queries } from "@/lib/db/schema";
 import { canEdit, type Role } from "@/lib/roles";
 import { queryConfigSchema, type QueryConfig } from "./ast";
 import { runQuery as executeQuery, type ExecutorResult } from "./executor";
+import {
+  getHubspotFieldSelectionWithFreshOptions,
+  getHubspotIntegration,
+} from "@/lib/integrations/hubspot";
 
 /** Pull the short table-friendly summary out of a shape-aware result. */
 function summarize(res: ExecutorResult): { summary: string; value: number | null } {
@@ -286,6 +290,159 @@ export async function updateQueryAction(input: {
       error: err instanceof Error ? err.message : "Failed to save.",
     };
   }
+}
+
+/**
+ * Filter context for the Edit Widget dialog's per-widget filter editor.
+ *
+ * Returns the same `allowed / customFields / enumOverrides` shape
+ * `/queries/new` passes to the wizard, so the dialog's FiltersEditor
+ * gets the operator's full /integrations selection (custom HubSpot
+ * fields, live pipeline / stage / lifecycle stage enum options).
+ *
+ * Workspace-gated; safe to call from any client component.
+ */
+export async function getWidgetFilterContext(): Promise<{
+  hubspotAllowed?: string[];
+  hubspotCustomFields: Array<{
+    id: string;
+    label: string;
+    type: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+  hubspotEnumOverrides: Record<
+    string,
+    Array<{ label: string; value: string }>
+  >;
+}> {
+  const { workspaceId } = await requireWorkspace();
+  const hubspot = await getHubspotIntegration(workspaceId);
+  const sel = hubspot
+    ? await getHubspotFieldSelectionWithFreshOptions(workspaceId)
+    : null;
+  if (!sel) {
+    return {
+      hubspotAllowed: undefined,
+      hubspotCustomFields: [],
+      hubspotEnumOverrides: {},
+    };
+  }
+  return {
+    hubspotAllowed: mapHubspotPropsToFieldIds(sel),
+    hubspotCustomFields: buildCustomFields(sel),
+    hubspotEnumOverrides: buildStandardEnumOverrides(sel),
+  };
+}
+
+// Helpers below mirror the inline ones in /queries/new/page.tsx — kept
+// here so the dialog action can use them without circular imports. If
+// they ever drift, the wizard and the widget filter editor will show
+// different field menus for the same workspace — fix both.
+
+function mapHubspotPropsToFieldIds(sel: {
+  deals: { name: string }[];
+  contacts: { name: string }[];
+}): string[] {
+  const dealMap: Record<string, string> = {
+    amount: "amount",
+    dealstage: "stage",
+    pipeline: "pipeline",
+    hubspot_owner_id: "ownerId",
+  };
+  const contactMap: Record<string, string> = {
+    email: "email",
+    hubspot_owner_id: "ownerId",
+    lifecyclestage: "lifecycleStage",
+  };
+  return [
+    ...sel.deals.map((f) => dealMap[f.name]).filter(Boolean),
+    ...sel.contacts.map((f) => contactMap[f.name]).filter(Boolean),
+    "count",
+  ];
+}
+
+function buildCustomFields(sel: {
+  deals: Array<{
+    name: string;
+    label: string;
+    type: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+  contacts: Array<{
+    name: string;
+    label: string;
+    type: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+}) {
+  const standardDeal = new Set([
+    "dealname",
+    "amount",
+    "dealstage",
+    "pipeline",
+    "closedate",
+    "hubspot_owner_id",
+    "createdate",
+  ]);
+  const standardContact = new Set([
+    "email",
+    "hubspot_owner_id",
+    "lifecyclestage",
+    "createdate",
+  ]);
+  return [
+    ...sel.deals
+      .filter((f) => !standardDeal.has(f.name))
+      .map((f) => ({
+        id: `custom:${f.name}`,
+        label: `Deal · ${f.label}`,
+        type: f.type,
+        options: f.options,
+      })),
+    ...sel.contacts
+      .filter((f) => !standardContact.has(f.name))
+      .map((f) => ({
+        id: `custom:${f.name}`,
+        label: `Contact · ${f.label}`,
+        type: f.type,
+        options: f.options,
+      })),
+  ];
+}
+
+function buildStandardEnumOverrides(sel: {
+  deals: Array<{
+    name: string;
+    type: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+  contacts: Array<{
+    name: string;
+    type: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+}): Record<string, Array<{ label: string; value: string }>> {
+  const out: Record<string, Array<{ label: string; value: string }>> = {};
+  const dealMap: Record<string, string> = {
+    dealstage: "stage",
+    pipeline: "pipeline",
+    hubspot_owner_id: "ownerId",
+  };
+  const contactMap: Record<string, string> = {
+    hubspot_owner_id: "ownerId",
+    lifecyclestage: "lifecycleStage",
+  };
+  for (const f of sel.deals) {
+    if (f.type !== "enumeration" || !f.options) continue;
+    const id = dealMap[f.name];
+    if (id) out[id] = f.options;
+  }
+  for (const f of sel.contacts) {
+    if (f.type !== "enumeration" || !f.options) continue;
+    const id = contactMap[f.name];
+    if (id) out[id] = f.options;
+  }
+  return out;
 }
 
 /**

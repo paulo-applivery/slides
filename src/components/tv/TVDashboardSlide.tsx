@@ -10,6 +10,7 @@ import {
 } from "@/components/widgets";
 import { SEED } from "@/lib/seed";
 import { Icons } from "@/components/ui/Icon";
+import { pickConditionalColor } from "@/lib/format";
 import {
   adaptBar,
   adaptGauge,
@@ -85,7 +86,13 @@ export function TVDashboardSlide({
         style={{
           flex: 1,
           minHeight: 0,
-          overflow: "hidden",
+          // No `overflow: hidden` here — the individual `.widget`
+          // already clips its own content (see app.css), and adding
+          // an extra clip on the grid container was chopping every
+          // widget's drop-shadow at the edge of the grid, leaving
+          // shadows looking sliced/bugged. Letting the grid show
+          // overflow restores the elevation on widgets near the
+          // bottom and right edges.
           gridTemplateRows: `repeat(${totalRows}, minmax(0, 1fr))`,
         }}
       >
@@ -147,6 +154,10 @@ type Status = "live" | "demo" | "error" | "incompatible";
 function resultStatus(widgetType: WidgetType, result: TvWidgetResult | undefined): Status {
   if (!result || result.kind === "unbound") return "demo";
   if (result.kind === "error") return "error";
+  // Funnel-ok is always live — the pre-fetcher already mapped each
+  // stage to a value (or 0 for unbound stages). No executor-kind check
+  // because the executor has no funnel kind.
+  if (result.kind === "funnel-ok") return "live";
   if (!WIDGET_ACCEPTS[widgetType].includes(result.result.kind)) {
     return "incompatible";
   }
@@ -174,8 +185,12 @@ function renderInside(
       />
     );
   }
+  if (status === "live" && result?.kind === "funnel-ok") {
+    // Pre-resolved stages from the TV pre-fetcher — render directly.
+    return <FunnelChart stages={result.stages} />;
+  }
   if (status === "live" && result?.kind === "ok") {
-    return renderBound(widget, result.result);
+    return renderBound(widget, result.result, result.conditionalColors);
   }
   return renderSeedFallback(widget);
 }
@@ -183,7 +198,18 @@ function renderInside(
 function renderBound(
   widget: DashboardLayout["widgets"][number],
   res: import("@/lib/queries/executor").ExecutorResult,
+  conditionalColors?: {
+    colors: [string, string, string];
+    thresholds: [number, number];
+  },
 ) {
+  const display = widget.display as { target?: number } | undefined;
+  // Same color-pick logic the editor uses — falls back to null when
+  // there's no target or no spec.
+  const condColor =
+    res.kind === "single"
+      ? pickConditionalColor(res.value ?? 0, display?.target, conditionalColors)
+      : null;
   switch (widget.type) {
     case "singleValue":
       if (res.kind !== "single") return null;
@@ -198,6 +224,8 @@ function renderBound(
             deltaPct={p.deltaPct}
             spark={p.spark}
             period="live"
+            formatted={p.formatted}
+            valueColor={condColor}
           />
         );
       }
@@ -205,14 +233,18 @@ function renderBound(
       if (res.kind !== "single") return null;
       {
         const p = adaptGauge(res, widget.display as { target?: number } | undefined);
-        return <GaugeChart value={p.value} target={p.target} />;
+        return <GaugeChart value={p.value} target={p.target} color={condColor} />;
       }
     case "bar":
       if (res.kind !== "timeseries") return null;
       return <BarChart data={adaptBar(res)} />;
     case "ranking":
       if (res.kind !== "groupby") return null;
-      return <RankingWidget reps={adaptRanking(res)} />;
+      // Ranking colors per-row against the dataset max — pass the
+      // full conditionalColors spec rather than the pre-resolved hex.
+      return (
+        <RankingWidget reps={adaptRanking(res, conditionalColors)} />
+      );
     case "funnel":
       return renderSeedFallback(widget);
   }

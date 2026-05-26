@@ -10,8 +10,16 @@ export type Rep = {
   value: number;
   target: number;
   delta: number;
+  /** Pre-formatted display string (outputFormat-aware). */
+  formatted?: string;
 };
 
-export type BarDatum = { label: string; value: number; prev?: number };
+export type BarDatum = {
+  label: string;
+  value: number;
+  prev?: number;
+  /** Pre-formatted axis / tooltip label (outputFormat-aware). */
+  formatted?: string;
+};
 
 export type FunnelStage = { label: string; value: number; formatted?: string };

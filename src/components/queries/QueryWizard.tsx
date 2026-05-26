@@ -8,53 +8,63 @@ import {
   updateQueryAction,
 } from "@/lib/queries/actions";
 import {
+  BUCKETS,
   DATE_RANGES,
-  FILTER_OPS,
-  FILTER_OP_LABEL,
   OUTPUT_FORMATS,
   OUTPUT_FORMAT_LABEL,
   SOURCES,
-  opIsMultiValue,
-  opIsUnary,
+  type Bucket,
   type ConditionalColors,
   type DateRange,
   type Filter,
-  type FilterOp,
   type OutputFormat,
+  type QueryConfig,
+  type QueryKind,
   type Source,
 } from "@/lib/queries/ast";
 import {
   AGGREGATION_LABEL,
+  CLIENT_METRICS,
   CLIENT_METRIC_INDEX,
   WIZARD_AGGREGATIONS,
   dateFieldsForSource,
   fieldsForSource,
   findMetricId,
+  objectFromMetricId,
   type FieldType,
+  type HubspotObject,
+  type SourceObject,
   type WizardAggregation,
 } from "@/lib/queries/catalog";
-import { Icons } from "@/components/ui/Icon";
+import { FiltersEditor } from "./FiltersEditor";
 
 /**
- * Query wizard — Plecto-style 7-step ordered form.
+ * Query wizard — Plecto-style 8-step ordered form.
  *
  *   1. Name
  *   2. Data source
  *   3. Function (aggregation + field)
- *   4. Filters (property + operator + value)
- *   5. Date field
- *   6. Output format
- *   7. Conditional colors
+ *   4. Show as (shape — single / timeseries / top-N)
+ *   5. Filters (property + operator + value)
+ *   6. Date field
+ *   7. Output format
+ *   8. Conditional colors
  *
- * Step 4 supports the full operator menu: is / is not / is any of /
+ * Step 4 picks the result shape. "Single value" is the default;
+ * "Over time" produces a `timeseries` query (with a day/week/month
+ * bucket + optional previous-period compare) consumable by Bar
+ * widgets; "Top N by …" produces a `groupby` query consumable by
+ * Ranking widgets. The group-by menu is sourced from
+ * `metricGroupByOptions` for the resolved metric — Stripe lets you
+ * group by customer/currency/status, HubSpot deals by owner/stage/
+ * pipeline, etc.
+ *
+ * Step 5 supports the full operator menu: is / is not / is any of /
  * is none of / is at least / is at most / is known / is unknown. The
  * unary operators (`known` / `unknown`) hide the value field.
  *
- * Steps 6 + 7 (output format, conditional colors) are stored on the
- * saved `QueryConfig` today — widget rendering picks them up next.
- *
- * Result shape is always `single` here; bar/funnel/ranking widgets will
- * grow their own composer in a follow-up.
+ * Steps 7 + 8 (output format, conditional colors) are honoured at
+ * render time for Single / Gauge / Bar / Ranking widgets.
  */
 /**
  * The page passes `metrics` for legacy reasons; we don't read it — the
@@ -133,6 +143,22 @@ export function QueryWizard({
     (initial?.config?.source as Source | undefined) ?? "stripe",
   );
 
+  // ─── Step 2b — HubSpot object (deals vs contacts).
+  // Stripe has only one object (charges), so the picker hides for it
+  // and the resolved object stays "charges" implicitly. HubSpot needs
+  // an explicit choice — without it, `findMetricId("hubspot",
+  // "count", "count")` always resolved to deals (first match in
+  // METRICS) and `hubspot.contact.count` was unreachable from /queries/new.
+  const [hubspotObject, setHubspotObject] = useState<HubspotObject>(() => {
+    if (initial?.config && initial.config.source === "hubspot") {
+      const o = objectFromMetricId("hubspot", initial.config.metric);
+      return o === "contacts" ? "contacts" : "deals";
+    }
+    return "deals";
+  });
+  const resolvedObject: SourceObject =
+    source === "hubspot" ? hubspotObject : "charges";
+
   // ─── Step 3
   const [aggregation, setAggregation] = useState<WizardAggregation>(
     initialDerived?.aggregation ?? "sum",
@@ -140,7 +166,10 @@ export function QueryWizard({
   const availableFields = useMemo(() => {
     const types: FieldType[] =
       aggregation === "count" ? ["count"] : ["currency", "numeric"];
-    const all = fieldsForSource(source, types);
+    // Narrow by source AND object so the deal field list doesn't leak
+    // into a Contacts query (e.g. "Deal amount (€)" would show up
+    // even though the contacts table has no amount column).
+    const all = fieldsForSource(source, types, resolvedObject);
     const allow = allowedFor(source);
     const standard = allow ? all.filter((f) => allow.includes(f.id)) : all;
 
@@ -150,7 +179,16 @@ export function QueryWizard({
     // executor resolves via `buildCustomMetric`.
     if (aggregation !== "count") {
       const customNumeric = (customFor(source) ?? [])
-        .filter((c) => c.type === "number")
+        // Custom HubSpot fields are labelled "Deal · X" or
+        // "Contact · X" by /queries/new — match the picked object so
+        // a deal-only custom amount doesn't appear in the Contacts
+        // field menu and vice versa.
+        .filter((c) => {
+          if (c.type !== "number") return false;
+          if (source !== "hubspot") return true;
+          const isContact = c.label?.startsWith("Contact");
+          return resolvedObject === "contacts" ? isContact : !isContact;
+        })
         .map((c) => ({
           id: c.id,
           source,
@@ -161,35 +199,106 @@ export function QueryWizard({
     }
     return standard;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, aggregation, allowedFieldsBySource, customFieldsBySource]);
+  }, [source, resolvedObject, aggregation, allowedFieldsBySource, customFieldsBySource]);
   const [fieldId, setFieldId] = useState<string>(
     initialDerived?.fieldId ?? availableFields[0]?.id ?? "amount",
   );
-  // Keep fieldId valid when source/aggregation changes.
+  // Keep fieldId valid when source/aggregation/object changes.
   useMemo(() => {
     if (!availableFields.find((f) => f.id === fieldId)) {
       setFieldId(availableFields[0]?.id ?? "amount");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, aggregation]);
+  }, [source, resolvedObject, aggregation]);
 
-  // ─── Step 4
+  // ─── Step 4 — Shape
+  // Default to "single" so the existing flow (the most common case) stays
+  // a one-click pick. Over-time and Top-N reveal their own sub-controls.
+  const [shape, setShape] = useState<QueryKind>(
+    initial?.config?.kind ?? "single",
+  );
+  const [bucket, setBucket] = useState<Bucket>(
+    initial?.config?.kind === "timeseries" ? initial.config.bucket : "day",
+  );
+  const [comparePrev, setComparePrev] = useState<boolean>(
+    initial?.config?.kind === "timeseries"
+      ? !!initial.config.comparePrev
+      : false,
+  );
+
+  // Resolve the picked (source, agg, fieldId) → metric id so the Top-N
+  // step can show only the groupings that metric supports. Custom fields
+  // resolve to `null` (synthetic `__custom:` ids don't expose
+  // groupByOptions yet) — we hide the timeseries/groupby shape pills
+  // when this is null.
+  const resolvedMetricId = useMemo(() => {
+    if (fieldId.startsWith("custom:")) return null;
+    return findMetricId(source, aggregation, fieldId, resolvedObject);
+  }, [source, resolvedObject, aggregation, fieldId]);
+
+  const groupByOptions = useMemo(() => {
+    if (!resolvedMetricId) return [];
+    const m = CLIENT_METRICS.find((x) => x.id === resolvedMetricId);
+    return m?.groupByOptions ?? [];
+  }, [resolvedMetricId]);
+
+  const [groupBy, setGroupBy] = useState<string>(
+    initial?.config?.kind === "groupby" ? initial.config.groupBy : "",
+  );
+  const [topLimit, setTopLimit] = useState<number>(
+    initial?.config?.kind === "groupby" ? (initial.config.limit ?? 10) : 10,
+  );
+
+  // When the metric or its groupings change, keep `groupBy` valid —
+  // otherwise we'd save a config with a column that doesn't exist on
+  // the target table and the executor would error.
+  useMemo(() => {
+    if (shape !== "groupby") return;
+    if (!groupByOptions.find((g) => g.field === groupBy)) {
+      setGroupBy(groupByOptions[0]?.field ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedMetricId, shape]);
+
+  // If the picked field stops supporting non-single shapes (e.g. user
+  // switched to a custom field, or to an aggregation whose metric has
+  // no groupings), fall back to "single" so we never save an invalid
+  // config.
+  useMemo(() => {
+    if (shape !== "single" && !resolvedMetricId) {
+      setShape("single");
+      return;
+    }
+    if (shape === "groupby" && groupByOptions.length === 0) {
+      setShape("single");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedMetricId, groupByOptions.length]);
+
+  // ─── Step 5
   const [filters, setFilters] = useState<Filter[]>(
     initial?.config?.filters ?? [],
   );
 
-  // ─── Step 5
+  // ─── Step 6
   // Date field menu = standard date columns + operator's picked custom
   // datetime fields. The executor's `resolveDateColumn` recognises the
   // `custom:` prefix and json_extracts on `custom_properties`.
   const dateFieldOptions = useMemo(() => {
-    const standard = dateFieldsForSource(source);
+    const standard = dateFieldsForSource(source, resolvedObject);
     const customDates = (customFor(source) ?? [])
-      .filter((c) => c.type === "datetime" || c.type === "date")
+      .filter((c) => {
+        if (c.type !== "datetime" && c.type !== "date") return false;
+        if (source !== "hubspot") return true;
+        // Same Deal/Contact label heuristic as the field menu — keep
+        // contact-only date fields out of the deal flow.
+        const isContact = c.label?.startsWith("Contact");
+        return resolvedObject === "contacts" ? isContact : !isContact;
+      })
       .map((c) => ({ id: c.id, source, label: c.label }));
     return [...standard, ...customDates];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, customFieldsBySource]);
+  }, [source, resolvedObject, customFieldsBySource]);
   const [dateField, setDateField] = useState<string>(
     initial?.config?.dateField ?? dateFieldOptions[0]?.id ?? "",
   );
@@ -203,12 +312,12 @@ export function QueryWizard({
     initial?.config?.dateRange ?? "this-month",
   );
 
-  // ─── Step 6
+  // ─── Step 7
   const [outputFormat, setOutputFormat] = useState<OutputFormat>(
     initial?.config?.outputFormat ?? "currency",
   );
 
-  // ─── Step 7
+  // ─── Step 8
   const [colorsEnabled, setColorsEnabled] = useState(
     !!initial?.config?.conditionalColors,
   );
@@ -225,7 +334,7 @@ export function QueryWizard({
   const [saving, startSave] = useTransition();
   const [previewing, startPreview] = useTransition();
 
-  function buildConfig() {
+  function buildConfig(): QueryConfig {
     // Custom-field path: the field is a virtual `custom:<propName>`
     // selection from /integrations. Mint a synthetic metric id the
     // executor resolves via `buildCustomMetric`.
@@ -240,22 +349,29 @@ export function QueryWizard({
     let metricId: string | null = null;
     if (fieldId.startsWith("custom:")) {
       const propName = fieldId.slice("custom:".length);
+      // Prefer the wizard's explicit Object picker as the source of
+      // truth; fall back to the "Deal · "/"Contact · " label
+      // heuristic only when the picker isn't applicable (Stripe).
       const customs = customFor(source) ?? [];
       const c = customs.find((x) => x.id === fieldId);
-      // The label is prefixed "Deal · " or "Contact · " by the page.
-      const object =
-        c?.label?.startsWith("Contact") ? "contacts" : "deals";
-      metricId = `__custom:${source}:${object}:${aggregation}:${propName}`;
+      const inferredObject =
+        source === "hubspot"
+          ? resolvedObject === "contacts"
+            ? "contacts"
+            : "deals"
+          : c?.label?.startsWith("Contact")
+            ? "contacts"
+            : "deals";
+      metricId = `__custom:${source}:${inferredObject}:${aggregation}:${propName}`;
     } else {
-      metricId = findMetricId(source, aggregation, fieldId);
+      metricId = findMetricId(source, aggregation, fieldId, resolvedObject);
     }
     if (!metricId) {
       throw new Error(
         `No metric registered for ${aggregation} of ${fieldId} on ${source}. Pick a different field.`,
       );
     }
-    return {
-      kind: "single" as const,
+    const base = {
       source,
       metric: metricId,
       filters,
@@ -264,6 +380,30 @@ export function QueryWizard({
       outputFormat,
       conditionalColors: colorsEnabled ? colors : undefined,
     };
+    if (shape === "timeseries") {
+      return {
+        kind: "timeseries",
+        ...base,
+        bucket,
+        // Only emit `comparePrev` when on — keeps saved configs minimal
+        // and avoids burning an extra query pass for the SEED case.
+        comparePrev: comparePrev || undefined,
+      };
+    }
+    if (shape === "groupby") {
+      if (!groupBy) {
+        throw new Error(
+          "Pick a grouping field for Top N (e.g. Owner, Stage, Pipeline).",
+        );
+      }
+      return {
+        kind: "groupby",
+        ...base,
+        groupBy,
+        limit: topLimit,
+      };
+    }
+    return { kind: "single", ...base };
   }
 
   function runPreview() {
@@ -330,6 +470,21 @@ export function QueryWizard({
           }))}
           onChange={setSource}
         />
+        {/* HubSpot has two queryable objects — surface the picker
+            inline so Contacts isn't silently unreachable. Stripe
+            only has Charges so we hide the picker entirely. */}
+        {source === "hubspot" && (
+          <div style={{ marginTop: 10 }}>
+            <Segmented
+              value={hubspotObject}
+              options={[
+                { value: "deals", label: "Deals" },
+                { value: "contacts", label: "Contacts" },
+              ]}
+              onChange={setHubspotObject}
+            />
+          </div>
+        )}
       </Step>
 
       <Step n={3} title="Function">
@@ -362,9 +517,31 @@ export function QueryWizard({
         </div>
       </Step>
 
-      <Step n={4} title="Filters">
+      <Step n={4} title="Show as">
+        <ShapeSelector
+          shape={shape}
+          onShape={setShape}
+          // Non-single shapes need a registered metric — custom fields
+          // don't have groupings yet and timeseries would have to invent
+          // a bucket date column. Disable + explain.
+          allowTimeseries={!!resolvedMetricId}
+          allowGroupby={groupByOptions.length > 0}
+          bucket={bucket}
+          onBucket={setBucket}
+          comparePrev={comparePrev}
+          onComparePrev={setComparePrev}
+          groupBy={groupBy}
+          onGroupBy={setGroupBy}
+          groupByOptions={groupByOptions}
+          topLimit={topLimit}
+          onTopLimit={setTopLimit}
+        />
+      </Step>
+
+      <Step n={5} title="Filters">
         <FiltersEditor
           source={source}
+          object={resolvedObject}
           filters={filters}
           onChange={setFilters}
           allowedFields={allowedFor(source)}
@@ -373,7 +550,7 @@ export function QueryWizard({
         />
       </Step>
 
-      <Step n={5} title="Date field">
+      <Step n={6} title="Date field">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <select
             value={dateField}
@@ -400,7 +577,7 @@ export function QueryWizard({
         </div>
       </Step>
 
-      <Step n={6} title="Output format">
+      <Step n={7} title="Output format">
         <Segmented
           value={outputFormat}
           options={OUTPUT_FORMATS.map((o) => ({
@@ -411,7 +588,7 @@ export function QueryWizard({
         />
       </Step>
 
-      <Step n={7} title="Conditional colors">
+      <Step n={8} title="Conditional colors">
         <label
           style={{
             display: "inline-flex",
@@ -543,234 +720,284 @@ function Step({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Filters
+// Shape selector
 // ─────────────────────────────────────────────────────────────────────────────
 
-function FiltersEditor({
-  source,
-  filters,
-  onChange,
-  allowedFields,
-  customFields,
-  standardEnumOptions,
+/**
+ * Step 4 — pick which executor `kind` the query produces:
+ *
+ *  - **single**     → one number (default — feeds Single value / Gauge widgets)
+ *  - **timeseries** → bucketed values over the date window (feeds Bar widgets)
+ *  - **groupby**    → top-N rows grouped by a column (feeds Ranking widgets)
+ *
+ * The non-single shapes need a resolved metric id (custom fields aren't
+ * supported there yet) and, for groupby, at least one registered
+ * grouping option. We disable the pill instead of hiding it so the user
+ * can see the shape exists and learn why it's locked.
+ */
+function ShapeSelector({
+  shape,
+  onShape,
+  allowTimeseries,
+  allowGroupby,
+  bucket,
+  onBucket,
+  comparePrev,
+  onComparePrev,
+  groupBy,
+  onGroupBy,
+  groupByOptions,
+  topLimit,
+  onTopLimit,
 }: {
-  source: Source;
-  filters: Filter[];
-  onChange: (next: Filter[]) => void;
-  /** Field-id allow-list from the parent (operator's /integrations selection). */
-  allowedFields?: string[];
-  /** Custom (JSON-backed) fields, surfaced inline with the standard ones. */
-  customFields?: Array<{
-    id: string;
-    label: string;
-    type: string;
-    options?: Array<{ label: string; value: string }>;
-  }>;
-  /**
-   * Live enum options for standard fields, keyed by internal field id.
-   * Overrides any hardcoded `enumValues` in SOURCE_FIELDS so the value
-   * picker uses real pipeline / stage / owner IDs from the connected
-   * portal.
-   */
-  standardEnumOptions?: Record<
-    string,
-    Array<{ label: string; value: string }>
-  >;
+  shape: QueryKind;
+  onShape: (s: QueryKind) => void;
+  allowTimeseries: boolean;
+  allowGroupby: boolean;
+  bucket: Bucket;
+  onBucket: (b: Bucket) => void;
+  comparePrev: boolean;
+  onComparePrev: (v: boolean) => void;
+  groupBy: string;
+  onGroupBy: (v: string) => void;
+  groupByOptions: ReadonlyArray<{ field: string; label: string }>;
+  topLimit: number;
+  onTopLimit: (n: number) => void;
 }) {
-  const allFields = useMemo(() => {
-    const all = fieldsForSource(source);
-    const standardBase = allowedFields
-      ? all.filter((f) => allowedFields.includes(f.id))
-      : all;
-    // Apply live enum overrides — when the operator picked a HubSpot
-    // enumeration property (Pipeline, Deal Stage, Lifecycle Stage),
-    // swap in its real options.
-    const standard = standardBase.map((f) => {
-      const live = standardEnumOptions?.[f.id];
-      if (live && live.length > 0) {
-        return { ...f, type: "enum" as const, enumValues: live };
-      }
-      return f;
-    });
-    // Append custom fields as virtual entries. HubSpot `enumeration`
-    // → our `enum` FieldType (so the value renders as a dropdown).
-    // Anything we don't recognise falls back to `string` → text input.
-    const customAsFields = (customFields ?? []).map((c) => ({
-      id: c.id,
-      source,
-      label: c.label,
-      type:
-        c.type === "number"
-          ? ("numeric" as const)
-          : c.type === "datetime"
-            ? ("date" as const)
-            : c.type === "bool"
-              ? ("boolean" as const)
-              : c.type === "enumeration"
-                ? ("enum" as const)
-                : ("string" as const),
-      enumValues: c.options,
-    }));
-    return [...standard, ...customAsFields];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, allowedFields, customFields]);
-
-  function addFilter() {
-    const first = allFields[0];
-    if (!first) return;
-    onChange([...filters, { field: first.id, op: "eq", value: "" }]);
-  }
-
-  function updateAt(idx: number, patch: Partial<Filter>) {
-    onChange(filters.map((f, i) => (i === idx ? ({ ...f, ...patch } as Filter) : f)));
-  }
-
-  function removeAt(idx: number) {
-    onChange(filters.filter((_, i) => i !== idx));
-  }
+  const shapeOptions: Array<{
+    value: QueryKind;
+    label: string;
+    disabled: boolean;
+    hint: string;
+  }> = [
+    {
+      value: "single",
+      label: "Single value",
+      disabled: false,
+      hint: "One number for Single value & Gauge widgets.",
+    },
+    {
+      value: "timeseries",
+      label: "Over time",
+      disabled: !allowTimeseries,
+      hint: allowTimeseries
+        ? "Bucketed values over the date window — for Bar widgets."
+        : "Pick a standard field above to enable this shape.",
+    },
+    {
+      value: "groupby",
+      label: "Top N by…",
+      disabled: !allowGroupby,
+      hint: allowGroupby
+        ? "Top N grouped by a column — for Ranking widgets."
+        : allowTimeseries
+          ? "This function has no group-by columns registered yet."
+          : "Pick a standard field above to enable this shape.",
+    },
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {filters.length === 0 && (
-        <p
-          className="t-small"
-          style={{ color: "var(--text-muted)", margin: "0 0 4px" }}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div
+        role="radiogroup"
+        style={{
+          display: "inline-flex",
+          background: "var(--bg-elev-2)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          padding: 2,
+          gap: 2,
+          alignSelf: "flex-start",
+        }}
+      >
+        {shapeOptions.map((o) => {
+          const active = o.value === shape;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={o.disabled}
+              title={o.hint}
+              onClick={() => !o.disabled && onShape(o.value)}
+              style={{
+                padding: "8px 14px",
+                background: active ? "var(--bg)" : "transparent",
+                border: "1px solid",
+                borderColor: active ? "var(--border-strong)" : "transparent",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: active ? 500 : 400,
+                color: o.disabled
+                  ? "var(--text-muted)"
+                  : active
+                    ? "var(--text-primary)"
+                    : "var(--text-secondary)",
+                cursor: o.disabled ? "not-allowed" : "pointer",
+                opacity: o.disabled ? 0.6 : 1,
+              }}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Hint line — explains why the current shape is what it is */}
+      <p
+        className="t-small"
+        style={{ color: "var(--text-muted)", margin: 0 }}
+      >
+        {shapeOptions.find((o) => o.value === shape)?.hint}
+      </p>
+
+      {/* Sub-controls for the picked shape */}
+      {shape === "timeseries" && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            padding: 12,
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+          }}
         >
-          No filters yet — all records match.
-        </p>
-      )}
-      {filters.map((f, idx) => {
-        const fieldDef = allFields.find((a) => a.id === f.field);
-        const unary = opIsUnary(f.op);
-        const multi = opIsMultiValue(f.op);
-        return (
-          <div
-            key={idx}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span
+              className="t-small"
+              style={{ color: "var(--text-tertiary)", minWidth: 60 }}
+            >
+              Bucket
+            </span>
+            <div
+              role="radiogroup"
+              style={{
+                display: "inline-flex",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: 2,
+                gap: 2,
+              }}
+            >
+              {BUCKETS.map((b) => {
+                const active = b === bucket;
+                return (
+                  <button
+                    key={b}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => onBucket(b)}
+                    style={{
+                      padding: "6px 12px",
+                      background: active ? "var(--bg-elev-2)" : "transparent",
+                      border: "1px solid",
+                      borderColor: active ? "var(--border-strong)" : "transparent",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: active ? 500 : 400,
+                      color: active
+                        ? "var(--text-primary)"
+                        : "var(--text-secondary)",
+                      cursor: "pointer",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {b}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <label
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 130px 1fr 32px",
-              gap: 8,
+              display: "inline-flex",
               alignItems: "center",
+              gap: 8,
+              fontSize: 13,
+              color: "var(--text-secondary)",
             }}
           >
+            <input
+              type="checkbox"
+              checked={comparePrev}
+              onChange={(e) => onComparePrev(e.target.checked)}
+              style={{ accentColor: "var(--primary)" }}
+            />
+            Compare to previous period
+          </label>
+        </div>
+      )}
+
+      {shape === "groupby" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 130px",
+            gap: 12,
+            padding: 12,
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+          }}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span
+              className="t-small"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              Group by
+            </span>
             <select
-              value={f.field}
-              onChange={(e) => updateAt(idx, { field: e.target.value })}
+              value={groupBy}
+              onChange={(e) => onGroupBy(e.target.value)}
               style={selectStyle}
             >
-              {allFields.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}
+              {groupByOptions.length === 0 && (
+                <option value="">No groupings available</option>
+              )}
+              {groupByOptions.map((g) => (
+                <option key={g.field} value={g.field}>
+                  {g.label}
                 </option>
               ))}
             </select>
-            <select
-              value={f.op}
-              onChange={(e) => {
-                const nextOp = e.target.value as FilterOp;
-                const becameMulti = opIsMultiValue(nextOp);
-                const wasMulti = opIsMultiValue(f.op);
-                let nextValue: Filter["value"] = f.value;
-                if (becameMulti && !wasMulti) nextValue = [];
-                if (!becameMulti && wasMulti) nextValue = "";
-                if (opIsUnary(nextOp)) nextValue = undefined;
-                updateAt(idx, { op: nextOp, value: nextValue });
-              }}
-              style={selectStyle}
-            >
-              {FILTER_OPS.map((op) => (
-                <option key={op} value={op}>
-                  {FILTER_OP_LABEL[op]}
-                </option>
-              ))}
-            </select>
-            {unary ? (
-              <span
-                className="t-small"
-                style={{
-                  color: "var(--text-muted)",
-                  padding: "10px 12px",
-                  background: "var(--bg-elev-2)",
-                  border: "1px dashed var(--border)",
-                  borderRadius: 8,
-                }}
-              >
-                (no value)
-              </span>
-            ) : multi && fieldDef?.enumValues ? (
-              <MultiEnumPicker
-                options={fieldDef.enumValues}
-                value={Array.isArray(f.value) ? (f.value as string[]) : []}
-                onChange={(next) => updateAt(idx, { value: next })}
-              />
-            ) : multi ? (
-              <input
-                type="text"
-                value={Array.isArray(f.value) ? f.value.join(", ") : ""}
-                onChange={(e) =>
-                  updateAt(idx, {
-                    value: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-                placeholder="value1, value2, value3"
-                style={inputStyle}
-              />
-            ) : fieldDef?.enumValues ? (
-              <select
-                value={typeof f.value === "string" ? f.value : ""}
-                onChange={(e) => updateAt(idx, { value: e.target.value })}
-                style={selectStyle}
-              >
-                <option value="" disabled>
-                  Choose…
-                </option>
-                {fieldDef.enumValues.map((v: { label: string; value: string }) => (
-                  <option key={v.value} value={v.value}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={
-                  typeof f.value === "string"
-                    ? f.value
-                    : typeof f.value === "number"
-                      ? String(f.value)
-                      : ""
-                }
-                onChange={(e) => updateAt(idx, { value: e.target.value })}
-                placeholder="value"
-                style={inputStyle}
-              />
-            )}
-            <button
-              type="button"
-              className="widget-iconbtn"
-              aria-label="Remove filter"
-              onClick={() => removeAt(idx)}
-              style={{ width: 32, height: 32 }}
-            >
-              <Icons.Close size={12} />
-            </button>
           </div>
-        );
-      })}
-      <button
-        type="button"
-        className="btn btn-ghost btn-sm"
-        onClick={addFilter}
-        style={{ alignSelf: "flex-start", marginTop: 4 }}
-      >
-        <Icons.Plus size={14} /> Add filter
-      </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span
+              className="t-small"
+              style={{ color: "var(--text-tertiary)" }}
+            >
+              Top N
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={topLimit}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (!Number.isNaN(n)) {
+                  onTopLimit(Math.max(1, Math.min(50, n)));
+                }
+              }}
+              style={{ ...inputStyle, textAlign: "right" }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// FiltersEditor + MultiEnumPicker now live in ./FiltersEditor.tsx so
+// the Edit-Widget dialog can reuse them without dragging the whole
+// wizard into the dashboard bundle. The import is at the top of this
+// file.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conditional colors editor
@@ -987,106 +1214,6 @@ function clientMetricById(
     }
   }
   return null;
-}
-
-/**
- * Compact multi-value picker for `is any of` / `is none of` on enum fields.
- *
- * Renders as a chip strip: each picked option is a removable pill, plus
- * a "+ Add" select to add another. Better than a comma-separated text
- * input — operators don't need to remember the internal enum values.
- */
-function MultiEnumPicker({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<{ label: string; value: string }>;
-  value: string[];
-  onChange: (next: string[]) => void;
-}) {
-  const remaining = options.filter((o) => !value.includes(o.value));
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        alignItems: "center",
-        gap: 6,
-        padding: 6,
-        minHeight: 38,
-        background: "var(--bg-elev-2)",
-        border: "1px solid var(--border)",
-        borderRadius: 10,
-      }}
-    >
-      {value.map((v) => {
-        const opt = options.find((o) => o.value === v);
-        return (
-          <span
-            key={v}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "3px 4px 3px 8px",
-              background: "var(--primary-soft)",
-              color: "var(--primary)",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 500,
-            }}
-          >
-            {opt?.label ?? v}
-            <button
-              type="button"
-              onClick={() => onChange(value.filter((x) => x !== v))}
-              aria-label={`Remove ${opt?.label ?? v}`}
-              style={{
-                width: 16,
-                height: 16,
-                display: "grid",
-                placeItems: "center",
-                background: "transparent",
-                color: "currentColor",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              ×
-            </button>
-          </span>
-        );
-      })}
-      {remaining.length > 0 && (
-        <select
-          value=""
-          onChange={(e) => {
-            if (!e.target.value) return;
-            onChange([...value, e.target.value]);
-          }}
-          style={{
-            background: "transparent",
-            border: "none",
-            outline: "none",
-            fontSize: 12,
-            color: "var(--text-tertiary)",
-            cursor: "pointer",
-            padding: "2px 4px",
-            minWidth: 80,
-          }}
-        >
-          <option value="">+ Add value…</option>
-          {remaining.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      )}
-    </div>
-  );
 }
 
 function Segmented<T extends string>({

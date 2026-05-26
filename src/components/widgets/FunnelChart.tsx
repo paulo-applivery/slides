@@ -1,155 +1,273 @@
 "use client";
 
-import {
-  Cell,
-  Funnel,
-  FunnelChart as RFunnelChart,
-  LabelList,
-  ResponsiveContainer,
-  Tooltip,
-} from "recharts";
 import { fmtInt } from "@/lib/format";
 import { useThemeTokens } from "@/lib/theme";
 import type { FunnelStage } from "./types";
 
 /**
- * Recharts FunnelChart — the textbook stage-by-stage funnel visualization.
+ * MUI-X-style stacked-trapezoid funnel.
  *
- * Conversion rates between stages are surfaced below the chart in a
- * standalone strip; the funnel itself is the canonical trapezoid shape.
+ * Each stage is a trapezoid whose top width matches the previous
+ * stage's bottom width — the funnel narrows continuously from the
+ * widest stage (top) toward the smallest (bottom). This is the
+ * reference shape the operator picked out of the MUI X examples and
+ * is the standard sales-funnel idiom (Plecto, Salesforce, MUI all use
+ * the continuous-narrowing variant rather than centred trapezoids).
  *
- * Colors walk from `--primary` to `--success` so the last stage (closed-won)
- * lands on the success token without leaving the brand palette.
+ *   ┌───────────────┐   ← stage A (value/max of full width)
+ *   └──┐         ┌──┘
+ *      └─────────┘     ← stage B (narrower)
+ *        └──┐ ┌──┘
+ *           └─┘        ← stage C (narrowest)
+ *
+ * Widths are scaled against the maximum value across all stages so the
+ * first stage usually fills the full width. Stages out of order
+ * (e.g. a later stage *higher* than an earlier one) still render
+ * truthfully — the funnel widens to show the anomaly rather than
+ * silently clamping it.
+ *
+ * Value labels are HTML-overlaid (not SVG `<text>`) so they keep the
+ * design system's font and don't get distorted by the SVG's
+ * non-uniform aspect-ratio scaling.
  */
 export type FunnelChartProps = {
   stages: FunnelStage[];
 };
 
-const TOKENS = [
-  "--primary",
-  "--primary-hover",
-  "--accent",
-  "--success",
-  "--text-tertiary",
-  "--text-primary",
-  "--border-strong",
-  "--bg",
-  "--text-muted",
-] as const;
+const TOKENS = ["--text-tertiary", "--text-primary"] as const;
 
-function lerp(hex1: string, hex2: string, k: number): string {
-  // Accepts 3- or 6-char hex; falls back to hex1 for non-hex inputs (CSS
-  // variables that came back as rgba). Cheap channel-wise mix.
-  const parse = (s: string) => {
-    const h = s.replace("#", "");
-    const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h.padEnd(6, "0");
-    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
-  };
-  if (!hex1.startsWith("#") || !hex2.startsWith("#")) return hex1;
-  const a = parse(hex1);
-  const b = parse(hex2);
-  const m = a.map((v, i) => Math.round(v + (b[i] - v) * k));
-  return "#" + m.map((v) => v.toString(16).padStart(2, "0")).join("");
+/**
+ * Keep all stages in the selected brand family. The appearance picker
+ * publishes its color as `--primary`, while `--secondary` supplies the
+ * design system navy used to deepen later conversion stages.
+ */
+function stageFill(index: number, total: number): string {
+  const ratio = total <= 1 ? 0 : index / (total - 1);
+  const primaryShare = Math.round(100 - ratio * 46);
+  return `color-mix(in srgb, var(--primary) ${primaryShare}%, var(--secondary))`;
 }
 
 export function FunnelChart({ stages }: FunnelChartProps) {
   const t = useThemeTokens(TOKENS);
 
-  // Walk from --primary → --success across the stages
-  const colorAt = (i: number) => {
-    if (!t["--primary"] || !t["--success"]) return t["--primary"];
-    const k = stages.length === 1 ? 0 : i / (stages.length - 1);
-    return lerp(t["--primary"], t["--success"], k);
-  };
-
-  const data = stages.map((s, i) => ({
-    name: s.label,
-    value: s.value,
-    formatted: s.formatted ?? fmtInt(s.value),
-    fill: colorAt(i),
-  }));
-
-  return (
-    <div className="funnel" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ width: "100%", height: 200 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <RFunnelChart>
-            <Tooltip
-              contentStyle={{
-                background: t["--bg"],
-                border: `1px solid ${t["--border-strong"]}`,
-                borderRadius: 10,
-                boxShadow: "var(--shadow-md)",
-                color: t["--text-primary"],
-                fontSize: 12,
-                padding: "8px 12px",
-              }}
-              labelStyle={{ color: t["--text-primary"], fontWeight: 500 }}
-              itemStyle={{ fontFamily: "var(--font-mono)" }}
-              formatter={(v) => fmtInt(Number(v))}
-            />
-            <Funnel dataKey="value" data={data} isAnimationActive>
-              {data.map((entry) => (
-                <Cell key={entry.name} fill={entry.fill} />
-              ))}
-              <LabelList
-                position="right"
-                fill={t["--text-primary"]}
-                stroke="none"
-                dataKey="name"
-                fontSize={12}
-                fontWeight={500}
-              />
-              <LabelList
-                position="inside"
-                fill="#fff"
-                stroke="none"
-                dataKey="formatted"
-                fontSize={13}
-                fontFamily="var(--font-mono)"
-              />
-            </Funnel>
-          </RFunnelChart>
-        </ResponsiveContainer>
-      </div>
-      {/* Conversion strip — bespoke design system component sitting below the
-          standard chart so we keep the stage-to-stage % info without
-          re-inventing the funnel itself. */}
-      <ul
+  if (stages.length === 0) {
+    return (
+      <div
         style={{
           display: "grid",
-          gridTemplateColumns: `repeat(${Math.max(1, stages.length - 1)}, 1fr)`,
-          gap: 8,
-          listStyle: "none",
-          padding: 0,
-          margin: 0,
+          placeItems: "center",
+          height: "100%",
+          minHeight: 80,
         }}
       >
-        {stages.slice(1).map((s, i) => {
-          const conv = (s.value / stages[i].value) * 100;
-          return (
-            <li
-              key={s.label}
+        <p
+          className="t-small"
+          style={{ color: t["--text-tertiary"], textAlign: "center" }}
+        >
+          No stages configured.
+        </p>
+      </div>
+    );
+  }
+
+  // viewBox dimensions — preserveAspectRatio="none" lets the SVG
+  // stretch to fill the cell while we keep the polygon math
+  // independent of the cell's actual size.
+  const W = 100;
+  const H = 100;
+  const stageH = H / stages.length;
+
+  // Normalise widths against the largest stage so the widest section
+  // (typically the first) fills ~100% of the available width. `max`
+  // guarded against 0 so an all-zero funnel still renders flat
+  // rectangles rather than dividing by zero.
+  const max = Math.max(...stages.map((s) => s.value), 1);
+  const widths = stages.map((s) => (Math.max(0, s.value) / max) * W);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        width: "100%",
+        height: "100%",
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          flex: 1,
+          minHeight: 0,
+          width: "100%",
+        }}
+      >
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          style={{ position: "absolute", inset: 0, display: "block" }}
+          role="img"
+          aria-label={`Funnel with ${stages.length} stages`}
+        >
+          {stages.map((s, i) => {
+            const topW = widths[i];
+            // The bottom of stage i matches the top of stage i+1, so
+            // the trapezoids tessellate cleanly with no gaps. Last
+            // stage gets a flat-bottom rectangle (top = bottom = its
+            // own width).
+            const botW =
+              i < stages.length - 1 ? widths[i + 1] : widths[i];
+            const tl = (W - topW) / 2;
+            const tr = tl + topW;
+            const bl = (W - botW) / 2;
+            const br = bl + botW;
+            const y0 = i * stageH;
+            const y1 = (i + 1) * stageH;
+            const prevValue = i > 0 ? stages[i - 1].value : null;
+            const conversion =
+              prevValue && prevValue > 0
+                ? ((s.value / prevValue) * 100).toFixed(1)
+                : null;
+            return (
+              <polygon
+                key={`${s.label}-${i}`}
+                points={`${tl},${y0} ${tr},${y0} ${br},${y1} ${bl},${y1}`}
+                fill={stageFill(i, stages.length)}
+              >
+                {/* Native SVG tooltip — cheap, no extra deps, and a
+                    reasonable fallback if we never wire up a React
+                    tooltip layer. */}
+                <title>
+                  {`${s.label}: ${s.formatted ?? fmtInt(s.value)}${
+                    conversion ? ` (${conversion}% from ${stages[i - 1].label})` : ""
+                  }`}
+                </title>
+              </polygon>
+            );
+          })}
+        </svg>
+
+        {/* HTML overlay for value labels.
+            We keep these out of the SVG because the SVG is scaled
+            non-uniformly (preserveAspectRatio="none"), which would
+            stretch any inline `<text>` along with the polygons.
+            Each non-first stage shows its conversion rate from the
+            previous stage right below the value — that's the
+            "% that moved A → B → C" the funnel idiom is built on. */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            pointerEvents: "none",
+          }}
+        >
+          {stages.map((s, i) => {
+            const prevValue = i > 0 ? stages[i - 1].value : null;
+            // Conversion = current / previous. Guarded against a 0
+            // previous (impossible to compute "% that moved" from
+            // nothing) and a missing previous (first stage). When
+            // a later stage exceeds the previous one we still
+            // render the >100% truthfully — it's an informative
+            // anomaly, not a bug to hide.
+            const conversion =
+              prevValue && prevValue > 0
+                ? (s.value / prevValue) * 100
+                : null;
+            return (
+              <div
+                key={`${s.label}-${i}-label`}
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "clamp(1px, 0.4cqh, 4px)",
+                  padding: "0 8px",
+                  color: "rgba(255, 255, 255, 0.96)",
+                  // Slight drop-shadow keeps the white legible on
+                  // the brightest brand stage without darkening
+                  // the palette.
+                  textShadow: "0 1px 2px rgba(0, 0, 0, 0.18)",
+                  fontFamily: "var(--font-mono)",
+                  lineHeight: 1,
+                  textAlign: "center",
+                }}
+              >
+                <span
+                  style={{
+                    fontWeight: 500,
+                    fontSize: "clamp(13px, 3.2cqh, 26px)",
+                  }}
+                >
+                  {s.formatted ?? fmtInt(s.value)}
+                </span>
+                {conversion !== null && (
+                  <span
+                    style={{
+                      fontSize: "clamp(9px, 1.8cqh, 14px)",
+                      opacity: 0.78,
+                      // Tighter weight so the conversion reads as
+                      // metadata rather than competing with the
+                      // primary value.
+                      fontWeight: 400,
+                      letterSpacing: "0.02em",
+                    }}
+                    aria-label={`${conversion.toFixed(1)} percent from previous stage`}
+                  >
+                    ↓ {conversion.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend strip — matches the swatch + label layout MUI uses
+          below their funnels. Wraps to multiple rows when the
+          container is too narrow. */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          gap: "6px 14px",
+          padding: "2px 4px",
+        }}
+      >
+        {stages.map((s, i) => (
+          <span
+            key={`${s.label}-${i}-legend`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12,
+              color: t["--text-tertiary"],
+              lineHeight: 1.2,
+            }}
+          >
+            <span
+              aria-hidden
               style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 2,
-                padding: "8px 10px",
-                background: "var(--bg-elev-2)",
-                border: "1px solid var(--border)",
-                borderRadius: 10,
+                width: 12,
+                height: 12,
+                borderRadius: 3,
+                background: stageFill(i, stages.length),
+                display: "inline-block",
+                flexShrink: 0,
               }}
-            >
-              <span className="t-micro" style={{ fontSize: 10 }}>
-                {stages[i].label} → {s.label}
-              </span>
-              <span className="t-mono" style={{ fontSize: 14, color: "var(--text-primary)", fontWeight: 500 }}>
-                {conv.toFixed(1)}%
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+            />
+            {s.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

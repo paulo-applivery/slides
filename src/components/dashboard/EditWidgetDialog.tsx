@@ -5,6 +5,13 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Icons, type IconName } from "@/components/ui/Icon";
 import { updateWidgetDisplay } from "@/lib/dashboards";
 import {
+  getWidgetFilterContext,
+  listQueriesForPicker,
+} from "@/lib/queries/actions";
+import { objectFromMetricId } from "@/lib/queries/catalog";
+import { FiltersEditor } from "@/components/queries/FiltersEditor";
+import type { Filter } from "@/lib/queries/ast";
+import {
   CHIP_COLORS,
   CHIP_ICONS,
   type ChipColorKey,
@@ -13,6 +20,9 @@ import {
 } from "./widgetChip";
 import { TimePeriodPicker } from "./TimePeriodPicker";
 import type { TimePeriod } from "@/lib/timePeriod";
+
+/** Funnel stage row — `queryId === null` means the operator hasn't picked one yet. */
+type StageRow = { id: string; label: string; queryId: string | null };
 
 /**
  * Tabbed widget editor — Display + Time period today; future tabs (Data,
@@ -37,6 +47,10 @@ export function EditWidgetDialog({
   currentChip,
   currentTimePeriod,
   currentTarget,
+  currentStages,
+  currentFilters,
+  boundQuerySource,
+  boundQueryMetric,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,6 +66,18 @@ export function EditWidgetDialog({
   currentTimePeriod?: TimePeriod;
   /** Current gauge target. Undefined when the widget falls back to SEED. */
   currentTarget?: number;
+  /** Funnel-only: stored stages with their per-stage query bindings. */
+  currentStages?: StageRow[];
+  /** Per-widget filter overlay (AND'd with the query's own filters). */
+  currentFilters?: Filter[];
+  /**
+   * Source/metric of the bound query. Used by the Filters tab to scope
+   * the field menu (HubSpot deals vs contacts, Stripe charges). When
+   * undefined the widget isn't bound and the Filters tab tells the
+   * operator to bind a query first.
+   */
+  boundQuerySource?: "stripe" | "hubspot";
+  boundQueryMetric?: string;
 }) {
   // Display state
   const [title, setTitle] = useState(currentTitle);
@@ -82,7 +108,20 @@ export function EditWidgetDialog({
   const [targetEnabled, setTargetEnabled] = useState(currentTarget !== undefined);
   const [target, setTarget] = useState<number>(currentTarget ?? 100_000);
 
-  const [tab, setTab] = useState<"display" | "time">("display");
+  // Funnel stages — keyed locally with crypto.randomUUID so React's
+  // reconciliation tracks reorders cleanly while the operator drags
+  // rows around. Server normalises ids on save.
+  const isFunnel = widgetType === "funnel";
+  const [stages, setStages] = useState<StageRow[]>(currentStages ?? []);
+
+  // Per-widget filter overlay state. The filter editor is only useful
+  // when the widget is bound to a real query — boundQuerySource gives
+  // us the source/object scoping the field menu needs.
+  const [filters, setFilters] = useState<Filter[]>(currentFilters ?? []);
+
+  const [tab, setTab] = useState<
+    "display" | "time" | "filters" | "stages"
+  >("display");
   const [saving, startSave] = useTransition();
 
   // Re-hydrate when reopening for a different widget.
@@ -106,6 +145,9 @@ export function EditWidgetDialog({
     setTargetEnabled(currentTarget !== undefined);
     setTarget(currentTarget ?? 100_000);
 
+    setStages(currentStages ?? []);
+    setFilters(currentFilters ?? []);
+
     setTab("display");
   }, [
     open,
@@ -115,6 +157,8 @@ export function EditWidgetDialog({
     currentChip,
     currentTimePeriod,
     currentTarget,
+    currentStages,
+    currentFilters,
   ]);
 
   function save() {
@@ -136,14 +180,26 @@ export function EditWidgetDialog({
               }
             : null,
         timePeriod: timePeriodEnabled && timePeriod ? timePeriod : null,
-        // Only patch `target` for gauges, and only when the toggle's on.
-        // For other widget types we don't surface it at all.
+        // Target is meaningful for gauges (fills the dial) and for
+        // SingleValue tiles (anchor for the query's conditionalColors).
+        // For everything else we leave the field untouched.
         target:
-          widgetType === "gauge"
+          widgetType === "gauge" || widgetType === "singleValue"
             ? targetEnabled
               ? target
               : null
             : undefined,
+        // Funnel-only — persist the configured stages. For other
+        // widget types we never touch the field so the server keeps
+        // whatever's already stored (typically nothing).
+        stages: isFunnel
+          ? stages.length > 0
+            ? stages
+            : null
+          : undefined,
+        // Widget-level filter overlay. `null` clears it; an empty
+        // array also clears it server-side.
+        filters: filters.length > 0 ? filters : null,
       });
       onOpenChange(false);
     });
@@ -225,6 +281,14 @@ export function EditWidgetDialog({
             <TabButton active={tab === "time"} onClick={() => setTab("time")}>
               Time period
             </TabButton>
+            <TabButton active={tab === "filters"} onClick={() => setTab("filters")}>
+              Filters
+            </TabButton>
+            {isFunnel && (
+              <TabButton active={tab === "stages"} onClick={() => setTab("stages")}>
+                Funnel stages
+              </TabButton>
+            )}
           </div>
 
           {tab === "display" && (
@@ -256,6 +320,20 @@ export function EditWidgetDialog({
               setTargetEnabled={setTargetEnabled}
               target={target}
               setTarget={setTarget}
+            />
+          )}
+
+          {tab === "stages" && isFunnel && (
+            <FunnelStagesTab stages={stages} onChange={setStages} />
+          )}
+
+          {tab === "filters" && (
+            <WidgetFiltersTab
+              filters={filters}
+              onChange={setFilters}
+              source={boundQuerySource}
+              metric={boundQueryMetric}
+              isFunnel={isFunnel}
             />
           )}
 
@@ -621,8 +699,11 @@ function DisplayTab(props: {
         </div>
       </div>
 
-      {/* Gauge target (gauge widgets only) */}
-      {widgetType === "gauge" && (
+      {/* Target — gauges + SingleValue tiles.
+          For gauges it drives the dial fill.
+          For SingleValue it's the anchor for the bound query's
+          `conditionalColors` percentage thresholds. */}
+      {(widgetType === "gauge" || widgetType === "singleValue") && (
         <div
           style={{
             marginTop: 22,
@@ -668,8 +749,9 @@ function DisplayTab(props: {
               className="t-small"
               style={{ marginTop: 6, color: "var(--text-muted)" }}
             >
-              The dial fills proportionally — when the bound value reaches the
-              target the gauge sits at 100 %.
+              {widgetType === "gauge"
+                ? "The dial fills proportionally — when the bound value reaches the target the gauge sits at 100 %."
+                : "Anchors the query's conditional colors: % of target picks the red / yellow / green stop."}
             </p>
           </div>
         </div>
@@ -718,6 +800,378 @@ function DisplayTab(props: {
         {previewChip ? <PreviewChip chip={previewChip} /> : null}
       </div>
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Filters tab — per-widget filter overlay.
+//
+// AND'd with the bound query's own filters at execute time. Lets one
+// saved query power many widgets with different scopes. Lazy-loads the
+// HubSpot filter context (custom fields + live enum options) so the
+// dialog opens snappy for non-filter use cases.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type FilterContext = Awaited<ReturnType<typeof getWidgetFilterContext>>;
+
+function WidgetFiltersTab({
+  filters,
+  onChange,
+  source,
+  metric,
+  isFunnel,
+}: {
+  filters: Filter[];
+  onChange: (next: Filter[]) => void;
+  source: "stripe" | "hubspot" | undefined;
+  metric: string | undefined;
+  isFunnel: boolean;
+}) {
+  const [ctx, setCtx] = useState<FilterContext | null>(null);
+
+  // Lazy-load filter context (custom HubSpot fields + live enum
+  // options) on first paint of this tab. Same pattern as the
+  // FunnelStagesTab query list.
+  useEffect(() => {
+    let alive = true;
+    if (source === "hubspot") {
+      getWidgetFilterContext()
+        .then((v) => {
+          if (alive) setCtx(v);
+        })
+        .catch(() => {
+          if (alive)
+            setCtx({
+              hubspotAllowed: undefined,
+              hubspotCustomFields: [],
+              hubspotEnumOverrides: {},
+            });
+        });
+    } else {
+      // Stripe (and unbound) need no async context — the standard
+      // SOURCE_FIELDS catalogue covers everything filterable.
+      setCtx({
+        hubspotAllowed: undefined,
+        hubspotCustomFields: [],
+        hubspotEnumOverrides: {},
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [source]);
+
+  // Without a bound query we can't scope the field menu — tell the
+  // operator to bind one first instead of showing a useless picker.
+  if (!source || !metric) {
+    return (
+      <div>
+        <SectionLabel style={{ marginBottom: 12 }}>Filters</SectionLabel>
+        <p
+          className="t-small"
+          style={{
+            padding: "12px 14px",
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            color: "var(--text-muted)",
+            margin: 0,
+          }}
+        >
+          {isFunnel
+            ? "Filters apply to every funnel stage. Bind at least one stage first so we know which fields are available."
+            : "Bind a query first — filters refine the data the widget already pulls."}
+        </p>
+      </div>
+    );
+  }
+
+  const object = objectFromMetricId(source, metric);
+
+  return (
+    <div>
+      <SectionLabel
+        style={{ marginBottom: 12 }}
+        right={
+          <span className="t-small" style={{ color: "var(--text-muted)" }}>
+            {filters.length} filter{filters.length === 1 ? "" : "s"}
+          </span>
+        }
+      >
+        Filters
+      </SectionLabel>
+      <p
+        className="t-small"
+        style={{
+          color: "var(--text-muted)",
+          margin: "0 0 14px",
+          lineHeight: 1.5,
+        }}
+      >
+        Layered on top of the bound query&apos;s own filters.{" "}
+        {isFunnel
+          ? "Applied to every funnel stage so the whole pipeline gets scoped together."
+          : "One query, many widgets — point each widget at a different slice."}
+      </p>
+      {ctx === null ? (
+        <p
+          className="t-small"
+          style={{ color: "var(--text-muted)", margin: 0 }}
+        >
+          Loading filter options…
+        </p>
+      ) : (
+        <FiltersEditor
+          source={source}
+          object={object}
+          filters={filters}
+          onChange={onChange}
+          allowedFields={ctx.hubspotAllowed}
+          customFields={ctx.hubspotCustomFields}
+          standardEnumOptions={ctx.hubspotEnumOverrides}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Funnel stages tab — list of (label, queryId) rows.
+//
+// Stages run as parallel queries server-side; this UI just configures
+// them. Only `single` queries are bindable per stage (a funnel needs
+// one number per row, not a timeseries or a top-N).
+// ─────────────────────────────────────────────────────────────────────────────
+
+type StagePickerRow = Awaited<ReturnType<typeof listQueriesForPicker>>[number];
+
+function FunnelStagesTab({
+  stages,
+  onChange,
+}: {
+  stages: StageRow[];
+  onChange: (next: StageRow[]) => void;
+}) {
+  const [queries, setQueries] = useState<StagePickerRow[] | null>(null);
+
+  // Lazy-load the picker list on first render of this tab so the
+  // dialog opens snappily for non-funnel widgets without paying the
+  // round-trip cost.
+  useEffect(() => {
+    let alive = true;
+    listQueriesForPicker()
+      .then((rows) => {
+        if (alive) setQueries(rows);
+      })
+      .catch(() => {
+        if (alive) setQueries([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const singleQueries = (queries ?? []).filter((q) => q.kind === "single");
+
+  function addStage() {
+    onChange([
+      ...stages,
+      {
+        id: crypto.randomUUID(),
+        label: `Stage ${stages.length + 1}`,
+        queryId: null,
+      },
+    ]);
+  }
+
+  function updateAt(idx: number, patch: Partial<StageRow>) {
+    onChange(stages.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  }
+
+  function removeAt(idx: number) {
+    onChange(stages.filter((_, i) => i !== idx));
+  }
+
+  function move(idx: number, dir: -1 | 1) {
+    const next = [...stages];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    onChange(next);
+  }
+
+  return (
+    <div>
+      <SectionLabel
+        style={{ marginBottom: 12 }}
+        right={
+          <span className="t-small" style={{ color: "var(--text-muted)" }}>
+            {stages.length} stage{stages.length === 1 ? "" : "s"}
+          </span>
+        }
+      >
+        Stages
+      </SectionLabel>
+
+      {stages.length === 0 && (
+        <p
+          className="t-small"
+          style={{ color: "var(--text-muted)", marginBottom: 12 }}
+        >
+          A funnel needs at least one stage. Each stage takes its value
+          from a saved <strong>single value</strong> query — e.g.{" "}
+          <em>“Leads created this quarter”</em>,{" "}
+          <em>“Closed-won deals”</em>.
+        </p>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {stages.map((s, idx) => (
+          <div
+            key={s.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "auto 1fr 1.4fr auto auto",
+              gap: 8,
+              alignItems: "center",
+              padding: 10,
+              background: "var(--bg-elev-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+            }}
+          >
+            <span
+              className="t-mono"
+              style={{
+                width: 22,
+                height: 22,
+                display: "grid",
+                placeItems: "center",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                fontSize: 11,
+                color: "var(--text-tertiary)",
+              }}
+              aria-label={`Stage ${idx + 1}`}
+            >
+              {idx + 1}
+            </span>
+            <input
+              type="text"
+              value={s.label}
+              onChange={(e) => updateAt(idx, { label: e.target.value })}
+              placeholder="e.g. Leads"
+              maxLength={40}
+              style={{
+                ...textInputStyle,
+                padding: "8px 10px",
+                fontSize: 13,
+              }}
+            />
+            <select
+              value={s.queryId ?? ""}
+              onChange={(e) =>
+                updateAt(idx, { queryId: e.target.value || null })
+              }
+              style={{
+                ...textInputStyle,
+                padding: "8px 10px",
+                fontSize: 13,
+                appearance: "none",
+              }}
+            >
+              <option value="">— No query (renders 0) —</option>
+              {queries === null && (
+                <option value="" disabled>
+                  Loading queries…
+                </option>
+              )}
+              {singleQueries.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.name}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <button
+                type="button"
+                className="widget-iconbtn"
+                aria-label="Move stage up"
+                onClick={() => move(idx, -1)}
+                disabled={idx === 0}
+                style={{
+                  width: 22,
+                  height: 22,
+                  opacity: idx === 0 ? 0.3 : 1,
+                  cursor: idx === 0 ? "not-allowed" : "pointer",
+                }}
+              >
+                <Icons.ArrowUp size={11} />
+              </button>
+              <button
+                type="button"
+                className="widget-iconbtn"
+                aria-label="Move stage down"
+                onClick={() => move(idx, 1)}
+                disabled={idx === stages.length - 1}
+                style={{
+                  width: 22,
+                  height: 22,
+                  opacity: idx === stages.length - 1 ? 0.3 : 1,
+                  cursor:
+                    idx === stages.length - 1 ? "not-allowed" : "pointer",
+                }}
+              >
+                <Icons.ArrowDown size={11} />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="widget-iconbtn"
+              aria-label={`Remove stage ${s.label}`}
+              onClick={() => removeAt(idx)}
+              style={{ width: 30, height: 30 }}
+            >
+              <Icons.Close size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        onClick={addStage}
+        disabled={stages.length >= 12}
+        title={
+          stages.length >= 12
+            ? "A funnel can have at most 12 stages."
+            : "Add another stage"
+        }
+        style={{ alignSelf: "flex-start", marginTop: 12 }}
+      >
+        <Icons.Plus size={14} /> Add stage
+      </button>
+
+      {queries !== null && singleQueries.length === 0 && (
+        <p
+          className="t-small"
+          style={{
+            marginTop: 14,
+            padding: "10px 12px",
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            color: "var(--text-muted)",
+          }}
+        >
+          You don&apos;t have any single-value queries yet. Build one
+          from <strong>/queries/new</strong> (the default shape in the
+          wizard), then come back here to wire it to a stage.
+        </p>
+      )}
+    </div>
   );
 }
 

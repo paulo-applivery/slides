@@ -99,11 +99,6 @@ export function TVApp({ slideshowId }: { slideshowId: string }) {
     [slideshowId, tryWithToken],
   );
 
-  const onUnpair = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY(slideshowId));
-    setState({ kind: "unpaired" });
-  }, [slideshowId]);
-
   if (state.kind === "checking") {
     return <BootSplash />;
   }
@@ -136,8 +131,6 @@ export function TVApp({ slideshowId }: { slideshowId: string }) {
     <TVMode
       slideshow={state.data.slideshow}
       dashboardsById={state.data.dashboardsById}
-      workspaceName={state.data.workspaceName}
-      onUnpair={onUnpair}
     />
   );
 }

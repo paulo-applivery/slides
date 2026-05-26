@@ -236,6 +236,24 @@ export async function updateWidgetDisplay(
     timePeriod?: unknown | null;
     /** Gauge target. `null` clears, falls back to the SEED default. */
     target?: number | null;
+    /**
+     * Funnel-only: ordered list of stages, each backed by its own
+     * (optional) saved query. We replace the whole list on every patch
+     * — it's small (typically 3–6 entries) and reorder/insert/delete
+     * are all expressed as a new list anyway. `null` clears the list
+     * entirely (widget falls back to SEED).
+     */
+    stages?:
+      | Array<{ id: string; label: string; queryId: string | null }>
+      | null;
+    /**
+     * Widget-level extra filters. AND'd with the bound query's own
+     * filters at execute time. Same shape as QueryConfig.filters.
+     * `null` clears the overlay. Replaces the whole array on every
+     * patch — like `stages`, it's small and reorder/delete are all
+     * just "save the new list".
+     */
+    filters?: import("@/lib/queries/ast").Filter[] | null;
   },
 ): Promise<void> {
   const { workspaceId } = await requireEditor();
@@ -253,6 +271,40 @@ export async function updateWidgetDisplay(
         } else {
           // Negative gauge targets aren't meaningful; clamp at 0.
           nextDisplay.target = Math.max(0, patch.target);
+        }
+      }
+      if (patch.filters !== undefined) {
+        // Empty array == "no filters" → drop the key so the saved
+        // display blob stays minimal. `null` does the same.
+        if (
+          patch.filters === null ||
+          (Array.isArray(patch.filters) && patch.filters.length === 0)
+        ) {
+          delete nextDisplay.filters;
+        } else {
+          // Trust the caller's shape — the EditWidgetDialog uses the
+          // same Filter editor as the wizard so the values are
+          // already validated. We don't run the Zod schema here to
+          // avoid pulling the AST into this server action.
+          nextDisplay.filters = patch.filters;
+        }
+      }
+      if (patch.stages !== undefined) {
+        if (patch.stages === null || patch.stages.length === 0) {
+          delete nextDisplay.stages;
+        } else {
+          // Sanitise: clamp label length, force `id` to a string, and
+          // coerce empty/whitespace queryIds to null so the renderer
+          // can treat unbound stages uniformly. Cap at 12 stages —
+          // beyond that a funnel chart loses readability anyway.
+          nextDisplay.stages = patch.stages.slice(0, 12).map((s) => ({
+            id: String(s.id || crypto.randomUUID()),
+            label: String(s.label ?? "").trim().slice(0, 40) || "Stage",
+            queryId:
+              typeof s.queryId === "string" && s.queryId.trim()
+                ? s.queryId
+                : null,
+          }));
         }
       }
       if (patch.title !== undefined) {

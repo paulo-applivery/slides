@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { Icons } from "@/components/ui/Icon";
 import { parseYoutubeId, youtubeEmbedUrl } from "@/lib/tv/slides";
@@ -33,18 +33,18 @@ type TvDashboard = {
 export function TVMode({
   slideshow,
   dashboardsById,
-  workspaceName,
-  onUnpair,
 }: {
   slideshow: { id: string; name: string; slides: Slide[] };
   dashboardsById: Record<string, TvDashboard>;
-  workspaceName: string;
-  /** Called when the user hits the corner unpair button — TVApp clears
-   *  localStorage and renders the QR pairing screen again. */
-  onUnpair?: () => void;
 }) {
+  // TV mode is intentionally chrome-free: no exit button, no top bar,
+  // no footer. The screen runs unattended in a sales floor and any
+  // visible UI element is either noise (workspace name, clock) or a
+  // hazard (accidental click drops broadcast). Just the dashboard,
+  // with 24px breathing room — see `.tv-slide` in screens.css.
+  // Unpair still happens programmatically (session expiry,
+  // server-side revoke) via the TVApp wrapper.
   const [idx, setIdx] = useState(0);
-  const [now, setNow] = useState(new Date());
 
   const slides = slideshow.slides;
   const current = slides[idx];
@@ -72,12 +72,6 @@ export function TVMode({
     );
     return () => clearTimeout(t);
   }, [current, slides.length]);
-
-  // Clock tick.
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, []);
 
   // Cursor-hide after idle.
   useEffect(() => {
@@ -139,49 +133,24 @@ export function TVMode({
     );
   }
 
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-
   return (
     <div className="tv-root">
       <div className="tv-glow" />
 
-      {onUnpair ? (
-        <button
-          type="button"
-          onClick={onUnpair}
-          className="tv-exit"
-          title="Unpair this TV"
-          aria-label="Unpair"
-        >
-          <Icons.Close size={16} />
-        </button>
-      ) : (
-        <Link
-          href={`/slideshows/${slideshow.id}/edit`}
-          className="tv-exit"
-          title="Exit TV mode"
-        >
-          <Icons.Close size={16} />
-        </Link>
-      )}
-
-      {/* Top chrome */}
-      <div className="tv-chrome tv-tl">
-        <span className="tv-mark" />
-        <div>
-          <div className="tv-ws-name">{workspaceName}</div>
-          <div className="tv-ws-dash">{slideshow.name}</div>
-        </div>
-      </div>
-      <div className="tv-chrome tv-tr">
-        <span className="tv-status tv-clock t-mono">
-          {hh}:{mm}
-        </span>
-      </div>
+      <TVBeam
+        key={`${current.id}-${idx}-${current.durationSec}`}
+        durationSec={current.durationSec}
+      />
 
       {/* Slide stage. YouTube + URL slides skip the padded `.tv-paired`
-          chrome via `.tv-slide-fullbleed` so the iframe runs edge-to-edge. */}
+          chrome via `.tv-slide-fullbleed` so the iframe runs edge-to-edge.
+          Previously this was paired with a bottom chrome (slide-dots +
+          "Slide N of M"), but TV mode is supposed to be broadcast-clean
+          — operators read the visual content, not navigation aids — so
+          the footer is gone. Reclaiming that ~80px of vertical space
+          also gives every widget on the dashboard slide more cqh to
+          breathe (see `.tv-slide { inset: 72px 0 24px }` in
+          screens.css). */}
       <div className="tv-stage">
         {slides.map((s, i) => {
           const fullbleed = s.type === "youtube" || s.type === "url";
@@ -201,29 +170,83 @@ export function TVMode({
           );
         })}
       </div>
-
-      {/* Bottom chrome */}
-      <div className="tv-chrome tv-bl">
-        <div className="tv-dots">
-          {slides.map((s, i) => (
-            <span
-              key={s.id}
-              className={`tv-dot-prog ${i === idx ? "is-active" : ""}`}
-            >
-              {i === idx && (
-                <span
-                  className="tv-dot-fill"
-                  style={{ animationDuration: `${s.durationSec}s` }}
-                />
-              )}
-            </span>
-          ))}
-        </div>
-        <span className="t-small" style={{ color: "var(--text-muted)" }}>
-          Slide {idx + 1} of {slides.length}
-        </span>
-      </div>
     </div>
+  );
+}
+
+// Center the 3px progress stroke 1.5px in from the SVG edge: its outer half
+// lands exactly on the viewport boundary, without an inset-frame margin.
+const BEAM_INSET = 1.5;
+const BEAM_RADIUS = 18;
+
+/**
+ * Renders a timed progress stroke in viewport pixel coordinates, keeping the
+ * rounded perimeter and fill timing accurate at every aspect ratio.
+ */
+function TVBeam({ durationSec }: { durationSec: number }) {
+  const [viewport, setViewport] = useState<{ width: number; height: number }>();
+
+  useEffect(() => {
+    const measure = () => {
+      const next = {
+        width: Math.max(1, window.innerWidth),
+        height: Math.max(1, window.innerHeight),
+      };
+      setViewport((prev) =>
+        prev?.width === next.width && prev.height === next.height ? prev : next,
+      );
+    };
+
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  if (!viewport) return null;
+
+  const width = Math.max(1, viewport.width - BEAM_INSET * 2);
+  const height = Math.max(1, viewport.height - BEAM_INSET * 2);
+  const radius = Math.min(BEAM_RADIUS, width / 2, height / 2);
+  const perimeter = 2 * (width + height - 4 * radius) + 2 * Math.PI * radius;
+  const beamStyle = {
+    "--tv-beam-duration": `${Math.max(1, durationSec)}s`,
+    "--tv-beam-perimeter": `${perimeter}px`,
+  } as CSSProperties;
+
+  return (
+    <svg
+      className="tv-beam"
+      viewBox={`0 0 ${viewport.width} ${viewport.height}`}
+      aria-hidden="true"
+      style={beamStyle}
+    >
+      <rect
+        className="tv-beam-rail"
+        x={BEAM_INSET}
+        y={BEAM_INSET}
+        width={width}
+        height={height}
+        rx={radius}
+      />
+      <rect
+        className="tv-beam-progress-glow"
+        x={BEAM_INSET}
+        y={BEAM_INSET}
+        width={width}
+        height={height}
+        rx={radius}
+        strokeDasharray={`${perimeter} ${perimeter}`}
+      />
+      <rect
+        className="tv-beam-progress"
+        x={BEAM_INSET}
+        y={BEAM_INSET}
+        width={width}
+        height={height}
+        rx={radius}
+        strokeDasharray={`${perimeter} ${perimeter}`}
+      />
+    </svg>
   );
 }
 
@@ -347,4 +370,3 @@ function UrlSlide({ url }: { url: string }) {
     </div>
   );
 }
-

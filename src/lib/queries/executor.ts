@@ -18,6 +18,7 @@ import {
   lt,
   ne,
   not,
+  or,
   sql,
   type SQL,
   type Column,
@@ -41,7 +42,13 @@ import {
   subMilliseconds,
 } from "date-fns";
 import { db } from "@/lib/db";
-import { fmtEUR, fmtInt, fmtPct } from "@/lib/format";
+import {
+  fmtDurationDays,
+  fmtEUR,
+  fmtInt,
+  fmtPct,
+  fmtYesNo,
+} from "@/lib/format";
 import { hubspotContacts, hubspotDeals, hubspotOwners } from "@/lib/db/schema";
 import {
   METRICS_BY_ID,
@@ -75,13 +82,25 @@ export type ExecutorResult =
     }
   | {
       kind: "timeseries";
-      points: Array<{ label: string; value: number; prev?: number }>;
+      points: Array<{
+        label: string;
+        value: number;
+        /** Pre-formatted display string honouring `config.outputFormat`. */
+        formatted: string;
+        prev?: number;
+      }>;
       formatter: FormatterKind;
       ms: number;
     }
   | {
       kind: "groupby";
-      rows: Array<{ key: string; label?: string; value: number }>;
+      rows: Array<{
+        key: string;
+        label?: string;
+        value: number;
+        /** Pre-formatted display string honouring `config.outputFormat`. */
+        formatted: string;
+      }>;
       formatter: FormatterKind;
       ms: number;
     };
@@ -234,7 +253,11 @@ function compileFilter(
       case "eq":
         return sql`${expr} = ${v}`;
       case "neq":
-        return sql`${expr} != ${v}`;
+        // `NULL != 'x'` is NULL, which WHERE treats as false — so a
+        // row with the custom property unset would be excluded. Almost
+        // never the operator's intent ("is not X" reads as "anything
+        // other than X, including missing"). Promote NULL to TRUE.
+        return sql`(${expr} IS NULL OR ${expr} != ${v})`;
       case "gte":
         return sql`CAST(${expr} AS REAL) >= ${v}`;
       case "lte":
@@ -248,7 +271,11 @@ function compileFilter(
         if (!Array.isArray(v)) {
           throw new Error(`Filter "${f.field}" op=nin requires an array value.`);
         }
-        return sql`${expr} NOT IN ${v}`;
+        // Same null-semantics trap as `neq`: `NULL NOT IN (...)` is
+        // NULL → row excluded. Treat missing values as "not any of
+        // these" so a contact with no custom:source still counts as
+        // "source is none of [...]".
+        return sql`(${expr} IS NULL OR ${expr} NOT IN ${v})`;
     }
   }
 
@@ -265,7 +292,10 @@ function compileFilter(
     case "eq":
       return eq(col, v as never);
     case "neq":
-      return ne(col, v as never);
+      // See compileFilter's custom-field branch for the null-semantics
+      // explanation. Same fix here: a row where the column is NULL
+      // should pass "is not X" rather than be silently excluded.
+      return or(isNull(col), ne(col, v as never));
     case "gte":
       return gte(col, v as never);
     case "lte":
@@ -279,7 +309,7 @@ function compileFilter(
       if (!Array.isArray(v)) {
         throw new Error(`Filter "${f.field}" op=nin requires an array value.`);
       }
-      return not(inArray(col, v as never[]));
+      return or(isNull(col), not(inArray(col, v as never[])));
   }
 }
 
@@ -330,7 +360,11 @@ async function runSingle(
   const conditions: SQL[] = [eq(workspaceCol, workspaceId)];
   if (window.from) conditions.push(gte(dateCol, window.from));
   if (window.to) conditions.push(lt(dateCol, window.to));
-  for (const f of config.filters) {
+  // Query-level filters first, widget-level extraFilters next — both
+  // AND'd into the WHERE clause. compileFilter doesn't care about
+  // ordering; we list them this way so a debugger sees query intent
+  // before widget refinement.
+  for (const f of [...config.filters, ...(opts.extraFilters ?? [])]) {
     const s = compileFilter(metric, table, f);
     if (s) conditions.push(s);
   }
@@ -346,7 +380,7 @@ async function runSingle(
   return {
     kind: "single",
     value,
-    formatted: formatScalar(metric, value),
+    formatted: formatScalar(metric, value, config.outputFormat),
     formatter: metric.unit,
     ms,
   };
@@ -372,7 +406,7 @@ async function runTimeseries(
 
   const window = opts.dateOverride ?? rangeToWindow(config.dateRange);
   const start = performance.now();
-  const current = await fetchBucketRows(workspaceId, metric, table, workspaceCol, dateCol, window, config);
+  const current = await fetchBucketRows(workspaceId, metric, table, workspaceCol, dateCol, window, config, opts);
 
   let prevMap: Map<string, number> | null = null;
   if (config.comparePrev && window.from && window.to) {
@@ -384,6 +418,7 @@ async function runTimeseries(
       dateCol,
       previousWindow(window),
       config,
+      opts,
     );
     // Zip by offset within the window (week 1 of current vs week 1 of prev),
     // since the labels differ.
@@ -397,11 +432,15 @@ async function runTimeseries(
 
   return {
     kind: "timeseries",
-    points: current.map((r) => ({
-      label: r.bucket,
-      value: Number(r.v),
-      prev: prevMap?.get(r.bucket),
-    })),
+    points: current.map((r) => {
+      const value = Number(r.v);
+      return {
+        label: r.bucket,
+        value,
+        formatted: formatScalar(metric, value, config.outputFormat),
+        prev: prevMap?.get(r.bucket),
+      };
+    }),
     formatter: metric.unit,
     ms,
   };
@@ -415,12 +454,14 @@ async function fetchBucketRows(
   dateCol: SQLiteColumn,
   window: { from: Date | null; to: Date | null },
   config: TimeseriesQuery,
+  opts: RunQueryOptions = {},
 ) {
   const bucketExpr = bucketExpression(dateCol, config.bucket);
   const conditions: SQL[] = [eq(workspaceCol, workspaceId)];
   if (window.from) conditions.push(gte(dateCol, window.from));
   if (window.to) conditions.push(lt(dateCol, window.to));
-  for (const f of config.filters) {
+  // Query-level + widget-level filters (see runSingle for rationale).
+  for (const f of [...config.filters, ...(opts.extraFilters ?? [])]) {
     const s = compileFilter(metric, table, f);
     if (s) conditions.push(s);
   }
@@ -460,7 +501,8 @@ async function runGroupBy(
   const conditions: SQL[] = [eq(workspaceCol, workspaceId)];
   if (window.from) conditions.push(gte(dateCol, window.from));
   if (window.to) conditions.push(lt(dateCol, window.to));
-  for (const f of config.filters) {
+  // Query-level + widget-level filters (see runSingle for rationale).
+  for (const f of [...config.filters, ...(opts.extraFilters ?? [])]) {
     const s = compileFilter(metric, table, f);
     if (s) conditions.push(s);
   }
@@ -512,10 +554,12 @@ async function runGroupBy(
     kind: "groupby",
     rows: rows.map((r) => {
       const key = typeof r.key === "string" ? r.key : String(r.key ?? "—");
+      const value = Number(r.v ?? 0);
       return {
         key,
         label: labelMap?.get(key),
-        value: Number(r.v ?? 0),
+        value,
+        formatted: formatScalar(metric, value, config.outputFormat),
       };
     }),
     formatter: metric.unit,
@@ -605,7 +649,34 @@ function buildCustomMetric(id: string): MetricDef {
   };
 }
 
-export function formatScalar(metric: { unit: FormatterKind }, raw: number): string {
+/**
+ * Format a scalar for display. When the query carries an explicit
+ * `outputFormat` (set in the wizard's Step 6), it wins over the metric's
+ * default unit — so picking "Percentage" reshapes a count metric into a
+ * `+12%` string, "Yes/No" turns it into a boolean readout, etc.
+ *
+ * The metric's unit is the fallback when no operator override is set.
+ */
+export function formatScalar(
+  metric: { unit: FormatterKind },
+  raw: number,
+  outputFormat?: "number" | "currency" | "percent" | "yesno" | "durationDays",
+): string {
+  if (outputFormat) {
+    switch (outputFormat) {
+      case "number":
+        return fmtInt(Math.round(raw));
+      case "currency":
+        // EUR-cents metrics divide by 100; anything else takes the raw.
+        return fmtEUR(metric.unit === "EUR-cents" ? raw / 100 : raw);
+      case "percent":
+        return fmtPct(raw, 1);
+      case "yesno":
+        return fmtYesNo(raw);
+      case "durationDays":
+        return fmtDurationDays(raw);
+    }
+  }
   switch (metric.unit) {
     case "EUR-cents":
       return fmtEUR(raw / 100);
@@ -631,6 +702,17 @@ export type RunQueryOptions = {
    * the rest of the dashboard follows whatever the queries default to).
    */
   dateOverride?: { from: Date | null; to: Date | null };
+  /**
+   * Per-widget extra filters, AND'd with the bound query's own
+   * `config.filters`. Lets one saved query power multiple widgets
+   * with different scopes — e.g. a single "Sum of deal amount" query
+   * powering widgets like "Closed Won this month" + "Closed Won
+   * Sales team" with the widget supplying the differentiating filter.
+   *
+   * Same Filter shape as `QueryConfig.filters`; the executor's
+   * `compileFilter` doesn't know or care where the filter came from.
+   */
+  extraFilters?: Filter[];
 };
 
 export async function runQuery(

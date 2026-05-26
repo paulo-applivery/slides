@@ -28,6 +28,10 @@ export function WidgetOverflowMenu({
   currentChip,
   currentTimePeriod,
   currentTarget,
+  currentStages,
+  currentFilters,
+  boundQuerySource,
+  boundQueryMetric,
 }: {
   dashboardId: string;
   widgetId: string;
@@ -46,7 +50,40 @@ export function WidgetOverflowMenu({
   currentTimePeriod?: TimePeriod;
   /** Current gauge target (undefined when using SEED default). */
   currentTarget?: number;
+  /**
+   * Funnel-only: the configured stages (label + queryId per row). The
+   * funnel widget binds queries per stage from the Edit dialog, so the
+   * top-level "Bind a query" item is hidden when this is non-null.
+   */
+  currentStages?: Array<{
+    id: string;
+    label: string;
+    queryId: string | null;
+  }>;
+  /**
+   * Per-widget filter overlay. Layered on top of the bound query's own
+   * filters at execute time. Edited in the Filters tab of the Edit
+   * Widget dialog.
+   */
+  currentFilters?: import("@/lib/queries/ast").Filter[];
+  /**
+   * The bound query's source — feeds the filter editor's field menu so
+   * a Stripe widget sees Stripe filters, a HubSpot widget sees HubSpot
+   * filters. `undefined` when the widget isn't bound (filters tab is
+   * disabled in that case — nothing to filter).
+   */
+  boundQuerySource?: "stripe" | "hubspot";
+  /**
+   * The bound query's metric id — feeds `objectFromMetricId` so the
+   * filter editor narrows HubSpot fields to deals vs contacts based
+   * on what the query is actually aggregating.
+   */
+  boundQueryMetric?: string;
 }) {
+  // Funnel binds per stage in the Edit dialog — hide the top-level
+  // "Bind a query" / "Unbind" items so operators don't get a useless
+  // single-query picker.
+  const isFunnel = widgetType === "funnel";
   // Controlled menu state — every selection (Edit / Bind / Unbind /
   // Remove) explicitly closes the dropdown. Previously we used
   // `e.preventDefault()` in onSelect to stop Radix's default close
@@ -99,32 +136,37 @@ export function WidgetOverflowMenu({
               onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "")}
             >
-              <Icons.Edit size={14} /> Edit widget…
+              <Icons.Edit size={14} />{" "}
+              {isFunnel ? "Edit widget & stages…" : "Edit widget…"}
             </DropdownMenu.Item>
-            <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
-            <DropdownMenu.Item
-              onSelect={() => pick(() => setPickerOpen(true))}
-              style={menuItemStyle("primary")}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "")}
-            >
-              <Icons.Plug size={14} /> {hasBinding ? "Change query" : "Bind a query"}
-            </DropdownMenu.Item>
-            {hasBinding && (
-              <DropdownMenu.Item
-                onSelect={() =>
-                  pick(() =>
-                    startTransition(async () => {
-                      await bindWidget(dashboardId, widgetId, null);
-                    }),
-                  )
-                }
-                style={menuItemStyle("normal")}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "")}
-              >
-                <Icons.Close size={14} /> Unbind
-              </DropdownMenu.Item>
+            {!isFunnel && (
+              <>
+                <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
+                <DropdownMenu.Item
+                  onSelect={() => pick(() => setPickerOpen(true))}
+                  style={menuItemStyle("primary")}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "")}
+                >
+                  <Icons.Plug size={14} /> {hasBinding ? "Change query" : "Bind a query"}
+                </DropdownMenu.Item>
+                {hasBinding && (
+                  <DropdownMenu.Item
+                    onSelect={() =>
+                      pick(() =>
+                        startTransition(async () => {
+                          await bindWidget(dashboardId, widgetId, null);
+                        }),
+                      )
+                    }
+                    style={menuItemStyle("normal")}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elev-2)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "")}
+                  >
+                    <Icons.Close size={14} /> Unbind
+                  </DropdownMenu.Item>
+                )}
+              </>
             )}
             <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
             <DropdownMenu.Item
@@ -164,6 +206,10 @@ export function WidgetOverflowMenu({
         currentChip={currentChip}
         currentTimePeriod={currentTimePeriod}
         currentTarget={currentTarget}
+        currentStages={currentStages}
+        currentFilters={currentFilters}
+        boundQuerySource={boundQuerySource}
+        boundQueryMetric={boundQueryMetric}
       />
     </>
   );

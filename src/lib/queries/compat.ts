@@ -8,6 +8,7 @@
  */
 import type { QueryKind } from "./ast";
 import type { ExecutorResult } from "./executor";
+import { pickConditionalColor } from "@/lib/format";
 import type {
   BarDatum,
   FunnelStage,
@@ -49,6 +50,8 @@ export type SingleValueProps = {
   deltaPct: number;
   spark: number[];
   unit: "€" | "%" | "#";
+  /** Pre-formatted display string (outputFormat-aware). */
+  formatted?: string;
 };
 
 /**
@@ -70,6 +73,11 @@ export function adaptSingleValue(res: Extract<ExecutorResult, { kind: "single" }
     deltaPct: 0,
     spark: [value, value],
     unit,
+    // `formatted` carries the executor's outputFormat-aware string —
+    // SingleValue prefers it over the unit-based fallback. `null` from
+    // the executor (rare: edge cases) collapses to undefined so the
+    // widget falls back to its internal formatting.
+    formatted: res.formatted ?? undefined,
   };
 }
 
@@ -96,11 +104,24 @@ export function adaptBar(
     label: p.label,
     value: scaleForUnit(p.value, res.formatter),
     prev: p.prev != null ? scaleForUnit(p.prev, res.formatter) : undefined,
+    formatted: p.formatted,
   }));
 }
 
+/**
+ * Build the Rep[] for the Ranking widget.
+ *
+ * `conditionalColors` (when provided) replaces the default palette with
+ * per-row colors picked via `pickConditionalColor(value, max, spec)` —
+ * the max value is the natural "target" for a ranking, so the wizard's
+ * percentage thresholds become "% of the top performer's value".
+ */
 export function adaptRanking(
   res: Extract<ExecutorResult, { kind: "groupby" }>,
+  conditionalColors?: {
+    colors: readonly [string, string, string];
+    thresholds: readonly [number, number];
+  } | null,
 ): Rep[] {
   const max = Math.max(...res.rows.map((r) => r.value), 0);
   const palette = ["#5C8BFF", "#FBBF24", "#4ADE80", "#F87171", "#A855F7", "#2DD4BF", "#FB7185"];
@@ -112,14 +133,18 @@ export function adaptRanking(
       .map((p) => p[0]?.toUpperCase() ?? "")
       .join("") || "?";
     const value = scaleForUnit(r.value, res.formatter);
+    const condColor = conditionalColors
+      ? pickConditionalColor(r.value, max > 0 ? max : null, conditionalColors)
+      : null;
     return {
       id: r.key + i,
       name,
       initials,
-      color: palette[i % palette.length],
+      color: condColor ?? palette[i % palette.length],
       value,
       target: max > 0 ? max : 1,
       delta: 0,
+      formatted: r.formatted,
     };
   });
 }

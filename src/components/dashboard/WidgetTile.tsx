@@ -1,8 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { queries as queriesTable } from "@/lib/db/schema";
 import { runQuery, type ExecutorResult } from "@/lib/queries/executor";
 import { resolveTimePeriod } from "@/lib/timePeriod";
+import { pickConditionalColor } from "@/lib/format";
 import {
   adaptBar,
   adaptGauge,
@@ -52,6 +53,21 @@ type WidgetDisplay = {
   period?: string;
   /** Gauge-specific: hardcoded target until queries can carry one. */
   target?: number;
+  /**
+   * Funnel-only: one entry per visible stage, each backed by an
+   * optional saved `single` query. Stages with no `queryId` (or whose
+   * query no longer exists / isn't compatible) render as 0 so the
+   * shape of the funnel still communicates the configured pipeline.
+   */
+  stages?: Array<{ id: string; label: string; queryId: string | null }>;
+  /**
+   * Widget-level filter overlay. AND'd with the bound query's own
+   * `config.filters` at execute time. Lets one saved query power
+   * multiple widgets with different scopes (e.g. "Closed Won this
+   * month" + "Closed Won Sales team" from the same metric). Schema
+   * matches QueryConfig.filters.
+   */
+  filters?: import("@/lib/queries/ast").Filter[];
 };
 
 /**
@@ -73,6 +89,22 @@ export async function WidgetTile({
   editable: boolean;
 }) {
   const display = (widget.display ?? {}) as WidgetDisplay;
+
+  // Funnel is the one widget type that ignores the top-level
+  // `widget.queryId` binding — its data comes from `display.stages`,
+  // a query per stage. Short-circuit the standard executor flow and
+  // hand off to the dedicated renderer.
+  if (widget.type === "funnel") {
+    return (
+      <FunnelTile
+        dashboardId={dashboardId}
+        workspaceId={workspaceId}
+        widget={widget}
+        display={display}
+        editable={editable}
+      />
+    );
+  }
 
   const bound = widget.queryId
     ? await db.query.queries.findFirst({
@@ -96,9 +128,18 @@ export async function WidgetTile({
         // `dateRange`. Without this, the picker UI looked like it
         // worked but the executor kept honouring the saved query's
         // window, producing "different data" between the two paths.
-        display.timePeriod
-          ? { dateOverride: toDateWindow(display.timePeriod) }
-          : undefined,
+        //
+        // `extraFilters` layers any widget-defined filter overlay on
+        // top of the query's own filters (AND'd in the executor).
+        {
+          dateOverride: display.timePeriod
+            ? toDateWindow(display.timePeriod)
+            : undefined,
+          extraFilters:
+            display.filters && display.filters.length > 0
+              ? display.filters
+              : undefined,
+        },
       );
     } catch (err) {
       executorError = err instanceof Error ? err.message : String(err);
@@ -131,6 +172,11 @@ export async function WidgetTile({
             currentChip={display.chip}
             currentTimePeriod={display.timePeriod}
             currentTarget={display.target}
+            currentFilters={display.filters}
+            boundQuerySource={bound ? (bound.source as "stripe" | "hubspot") : undefined}
+            boundQueryMetric={
+              bound ? ((bound.config as { metric: string }).metric) : undefined
+            }
           />
         ) : undefined
       }
@@ -142,7 +188,33 @@ export async function WidgetTile({
           message={`This widget expects ${WIDGET_ACCEPTS[widget.type].join(" or ")} queries, but the binding returned ${executorResult.kind}.`}
         />
       ) : executorResult ? (
-        renderBound(widget, display, executorResult)
+        (() => {
+          // Drizzle's inferred JSON type loses the AST shape — cast.
+          const spec = (
+            bound?.config as
+              | {
+                  conditionalColors?: {
+                    colors: readonly [string, string, string];
+                    thresholds: readonly [number, number];
+                  };
+                }
+              | undefined
+          )?.conditionalColors;
+          return renderBound(widget, display, executorResult, {
+            // Single-shot color for Single/Gauge widgets (computed
+            // against display.target). Ranking uses the full spec to
+            // pick per-row colors against the dataset max instead.
+            conditionalColor:
+              executorResult.kind === "single"
+                ? pickConditionalColor(
+                    executorResult.value ?? 0,
+                    display.target,
+                    spec,
+                  )
+                : null,
+            conditionalColorsSpec: spec,
+          });
+        })()
       ) : (
         renderSeedFallback(widget, display)
       )}
@@ -187,6 +259,13 @@ function renderBound(
   widget: Widget,
   display: WidgetDisplay,
   res: ExecutorResult,
+  opts: {
+    conditionalColor: string | null;
+    conditionalColorsSpec?: {
+      colors: readonly [string, string, string];
+      thresholds: readonly [number, number];
+    };
+  } = { conditionalColor: null },
 ) {
   switch (widget.type) {
     case "singleValue":
@@ -202,6 +281,8 @@ function renderBound(
             deltaPct={p.deltaPct}
             spark={p.spark}
             period={display.period ?? "this period"}
+            formatted={p.formatted}
+            valueColor={opts.conditionalColor}
           />
         );
       }
@@ -209,14 +290,24 @@ function renderBound(
       if (res.kind !== "single") return null;
       {
         const p = adaptGauge(res, display);
-        return <GaugeChart value={p.value} target={p.target} />;
+        return (
+          <GaugeChart
+            value={p.value}
+            target={p.target}
+            color={opts.conditionalColor}
+          />
+        );
       }
     case "bar":
       if (res.kind !== "timeseries") return null;
       return <BarChart data={adaptBar(res)} />;
     case "ranking":
       if (res.kind !== "groupby") return null;
-      return <RankingWidget reps={adaptRanking(res)} />;
+      return (
+        <RankingWidget
+          reps={adaptRanking(res, opts.conditionalColorsSpec)}
+        />
+      );
     case "funnel":
       // No funnel kind in the executor yet — fall through to SEED.
       return renderSeedFallback(widget, display);
@@ -284,6 +375,141 @@ function toDateWindow(tp: TimePeriod): {
     from: r.start ? new Date(`${r.start}T00:00:00.000Z`) : null,
     to: r.end ? new Date(`${r.end}T23:59:59.999Z`) : null,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Funnel — one (label, queryId) per stage. Top-level widget.queryId is
+// ignored for funnel widgets; the operator configures stages in the
+// "Funnel stages" tab of Edit widget.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Server component that fans out per-stage queries in parallel.
+ *
+ * Each stage's saved query must return `kind: "single"` — we only need a
+ * value per stage. Unbound stages or stages whose query no longer
+ * matches the workspace render as 0 so the funnel shape stays stable
+ * (and the operator can see which stages still need wiring).
+ *
+ * When `display.stages` is missing or empty, we fall back to the SEED
+ * funnel so the widget keeps a useful preview before the operator
+ * configures it.
+ */
+async function FunnelTile({
+  dashboardId,
+  workspaceId,
+  widget,
+  display,
+  editable,
+}: {
+  dashboardId: string;
+  workspaceId: string;
+  widget: Widget;
+  display: WidgetDisplay;
+  editable: boolean;
+}) {
+  const stages = display.stages ?? [];
+  const resolvedTitle = resolveTitle(display, "funnel", undefined);
+
+  // Pull every stage's saved query in one round-trip so we don't N+1
+  // the queries table when a funnel has many stages.
+  const queryIds = stages
+    .map((s) => s.queryId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+
+  const rows = queryIds.length
+    ? await db
+        .select({
+          id: queriesTable.id,
+          config: queriesTable.config,
+        })
+        .from(queriesTable)
+        .where(
+          and(
+            eq(queriesTable.workspaceId, workspaceId),
+            inArray(queriesTable.id, queryIds),
+          ),
+        )
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  // Run each bound stage in parallel. Stages that are unbound,
+  // missing, or non-single get a value of 0 — the funnel still
+  // renders the operator's chosen shape.
+  const runs = await Promise.all(
+    stages.map(async (s) => {
+      if (!s.queryId) return { label: s.label, value: 0 };
+      const q = byId.get(s.queryId);
+      if (!q) return { label: s.label, value: 0 };
+      try {
+        const res = await runQuery(
+          workspaceId,
+          q.config as Parameters<typeof runQuery>[1],
+          {
+            dateOverride: display.timePeriod
+              ? toDateWindow(display.timePeriod)
+              : undefined,
+            // Funnel-level extra filters apply to every stage so the
+            // whole pipeline gets scoped together — e.g. "Sales team
+            // only" filters all of Leads → MQL → SQL → Won at once.
+            extraFilters:
+              display.filters && display.filters.length > 0
+                ? display.filters
+                : undefined,
+          },
+        );
+        if (res.kind !== "single") {
+          // Wrong query shape — render 0 rather than throwing so the
+          // funnel can keep working while the operator fixes the
+          // binding.
+          return { label: s.label, value: 0 };
+        }
+        const value = res.formatter === "EUR-cents" ? (res.value ?? 0) / 100 : (res.value ?? 0);
+        return {
+          label: s.label,
+          value,
+          formatted: res.formatted ?? undefined,
+        };
+      } catch {
+        return { label: s.label, value: 0 };
+      }
+    }),
+  );
+
+  // No configured stages → SEED preview. Keeps the empty funnel from
+  // looking broken on a fresh widget.
+  const stagesForChart =
+    stages.length === 0 ? [...SEED.funnel] : runs;
+
+  return (
+    <WidgetShell
+      title={resolvedTitle}
+      titleSize={display.titleSize}
+      titleAlign={display.titleAlign}
+      chip={display.chip}
+      dragHandle={editable}
+      action={
+        editable ? (
+          <WidgetOverflowMenu
+            dashboardId={dashboardId}
+            widgetId={widget.id}
+            widgetType="funnel"
+            widgetName={resolvedTitle}
+            hasBinding={stages.length > 0}
+            currentTitle={display.title ?? resolvedTitle}
+            currentTitleSize={display.titleSize}
+            currentTitleAlign={display.titleAlign}
+            currentChip={display.chip}
+            currentTimePeriod={display.timePeriod}
+            currentTarget={display.target}
+            currentStages={stages}
+          />
+        ) : undefined
+      }
+    >
+      <FunnelChart stages={stagesForChart} />
+    </WidgetShell>
+  );
 }
 
 function WidgetError({ message }: { message: string }) {
