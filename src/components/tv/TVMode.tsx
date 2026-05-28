@@ -71,8 +71,13 @@ export function TVMode({
   useEffect(() => {
     const html = document.documentElement;
     const prevTheme = html.getAttribute("data-theme");
+    // Tell ThemeProvider to back off for the TV mount; otherwise its
+    // shell-theme effect can overwrite our per-slide data-theme on a
+    // full page load (child effects fire before parent ones).
+    html.setAttribute("data-theme-locked", "1");
     document.body.style.overflow = "hidden";
     return () => {
+      html.removeAttribute("data-theme-locked");
       if (prevTheme) html.setAttribute("data-theme", prevTheme);
       else html.removeAttribute("data-theme");
       html.removeAttribute("data-glass");

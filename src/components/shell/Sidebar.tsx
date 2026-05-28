@@ -43,7 +43,7 @@ export function Sidebar({ footer }: { footer?: ReactNode }) {
         </div>
         <div className="sb-brand-text">
           <strong>Applivery</strong>
-          <span>Slides</span>
+          <span>Atlas</span>
         </div>
       </Link>
 

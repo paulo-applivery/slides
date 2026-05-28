@@ -32,6 +32,7 @@ body { min-width: 1280px; }
 }
 .sb-brand-mark {
   width: 28px; height: 28px;
+  flex-shrink: 0;
   display: grid; place-items: center;
   border-radius: 8px;
   background: var(--primary);

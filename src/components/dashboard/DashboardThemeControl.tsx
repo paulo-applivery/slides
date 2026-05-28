@@ -30,11 +30,15 @@ export function DashboardThemeControl({
   const [pending, startTransition] = useTransition();
 
   // Drive <html data-theme> off the local theme; restore on unmount.
+  // The `data-theme-locked` flag tells ThemeProvider to back off so its
+  // shell-theme effect doesn't overwrite our value on a full page load.
   useEffect(() => {
     const html = document.documentElement;
     const prev = html.getAttribute("data-theme");
     html.setAttribute("data-theme", theme);
+    html.setAttribute("data-theme-locked", "1");
     return () => {
+      html.removeAttribute("data-theme-locked");
       if (prev) html.setAttribute("data-theme", prev);
       else html.removeAttribute("data-theme");
     };
