@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Toaster } from "sonner";
+import { Toaster } from "sileo";
 import { auth } from "@/auth";
 import { Providers } from "@/components/providers";
 import "./globals.css";
+import "sileo/styles.css";
 
 /**
  * Outfit — self-hosted (brand rule: never Google CDN). We only ship 400 / 500 / 600
@@ -44,13 +45,8 @@ export default async function RootLayout({
         <Providers session={session}>{children}</Providers>
         <Toaster
           theme="light"
-          richColors
           position="top-right"
-          toastOptions={{
-            classNames: {
-              toast: "!font-sans !rounded-[var(--radius-md)] !shadow-md",
-            },
-          }}
+          options={{ roundness: 10 }}
         />
       </body>
     </html>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Icons, type IconName } from "@/components/ui/Icon";
+import { LogoBadge } from "@/components/brand/Logo";
 
 /**
  * Client-side nav rail. `footer` is a server-rendered slot for the
@@ -35,12 +36,7 @@ export function Sidebar({ footer }: { footer?: ReactNode }) {
   return (
     <aside className="sb">
       <Link href="/dashboards" className="sb-brand" style={{ textDecoration: "none" }}>
-        <div className="sb-brand-mark">
-          <svg width="14" height="14" viewBox="0 0 70 70" fill="white" aria-hidden="true">
-            <path d="M35 0 L70 60 L55 56 L35 22 L15 56 L0 60 Z" />
-            <path d="M35 36 L45 56 L35 53 L25 56 Z" />
-          </svg>
-        </div>
+        <LogoBadge size={28} />
         <div className="sb-brand-text">
           <strong>Applivery</strong>
           <span>Atlas</span>

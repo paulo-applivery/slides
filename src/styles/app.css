@@ -30,15 +30,6 @@ body { min-width: 1280px; }
   border-bottom: 1px solid var(--border);
   margin-bottom: 12px;
 }
-.sb-brand-mark {
-  width: 28px; height: 28px;
-  flex-shrink: 0;
-  display: grid; place-items: center;
-  border-radius: 8px;
-  background: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-:root[data-theme="dark"] .sb-brand-mark { background: var(--brand); }
 .sb-brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .sb-brand-text strong { color: var(--text-primary); font-weight: 500; letter-spacing: -0.01em; }
 .sb-brand-text span { font-size: 11px; color: var(--text-tertiary); letter-spacing: 0.05em; text-transform: uppercase; }

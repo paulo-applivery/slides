@@ -1,6 +1,7 @@
 import { GoogleSignInButton } from "./google-button";
 import { DevLoginForm } from "./dev-login-form";
 import { devLoginEnabled } from "@/lib/dev-login";
+import { LogoBadge } from "@/components/brand/Logo";
 
 /**
  * Login screen — Google SSO. Light canvas with a faint ambient brand-tint
@@ -53,34 +54,13 @@ export default function LoginPage({
           textAlign: "center",
         }}
       >
-        <div
+        <LogoBadge
+          size={48}
           style={{
-            width: 48,
-            height: 48,
-            aspectRatio: "1 / 1",
-            flexShrink: 0,
-            borderRadius: 12,
-            background: "var(--primary)",
             margin: "0 auto 20px",
-            display: "grid",
-            placeItems: "center",
             boxShadow: "0 0 0 4px var(--primary-soft)",
           }}
-          aria-hidden
-        >
-          <svg width="22" height="22" viewBox="72 73 144 143" fill="white">
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M144.012 73.0235L156.9 98.5442L156.888 98.5679L216 215.615L186.573 208.389L144 124.089L101.427 208.389L72 215.615L131.111 98.5679L131.1 98.5442L143.988 73.0235L144 73L144.012 73.0235Z"
-            />
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M144.04 153.275L164.099 192.855L143.978 188.022L123.858 192.855L144.034 153.275L144.037 153.269L144.04 153.275Z"
-            />
-          </svg>
-        </div>
+        />
         <h1 className="t-h2" style={{ marginBottom: 6 }}>
           Your KPIs. Live.
         </h1>

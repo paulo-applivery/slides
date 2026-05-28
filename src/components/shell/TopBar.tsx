@@ -47,7 +47,7 @@ export async function TopBar({ crumbs, name, actions }: TopBarProps) {
   return (
     <header className="tb">
       <div className="tb-title">
-        {isAdmin && workspaceId && allWorkspaces.length > 1 ? (
+        {isAdmin && workspaceId ? (
           <WorkspaceSwitcher
             current={{ id: workspaceId, name: workspaceName }}
             workspaces={allWorkspaces}
