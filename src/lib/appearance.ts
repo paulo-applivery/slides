@@ -31,6 +31,22 @@ export type SlideAppearance = {
 
 export const DEFAULT_BRAND_COLOR = "#5C8BFF";
 
+/**
+ * Fixed Applivery brand palette driving every WebGL background effect,
+ * regardless of a slide's per-slide `brandColor` (that picker only tints
+ * glass cards / chart accents now). Kept here so the renderer and any
+ * future preview share one source of truth.
+ *
+ *   primary → the dominant brand blue
+ *   deep    → the dark base the effects sit over
+ *   accent  → the bright cyan highlight
+ */
+export const BRAND_PALETTE = {
+  primary: "#0241E3",
+  deep: "#010258",
+  accent: "#09E9FF",
+} as const;
+
 export const DEFAULT_SLIDE_APPEARANCE: SlideAppearance = {
   background: null,
   glassCards: false,

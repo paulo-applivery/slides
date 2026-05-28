@@ -394,6 +394,31 @@
 }
 .tv-slide.is-active { opacity: 1; transform: scale(1); pointer-events: auto; }
 
+/* Per-slide transition variants (the base `.tv-slide` rule above is the
+   `crossfade` default: opacity + subtle scale). The renderer stamps each
+   slide with its configured `data-transition`. */
+
+/* slide — horizontal push: the incoming slide eases in from the right,
+   the outgoing one parks left. No scale so it reads as a translation. */
+.tv-slide[data-transition="slide"] {
+  transform: translateX(6%) scale(1);
+}
+.tv-slide[data-transition="slide"].is-active {
+  transform: translateX(0) scale(1);
+}
+
+/* cut — instant swap, no animation. */
+.tv-slide[data-transition="cut"] {
+  transition: none;
+  transform: none;
+}
+.tv-slide[data-transition="cut"].is-active {
+  transform: none;
+}
+.tv-slide-fullbleed[data-transition="cut"] {
+  transition: none;
+}
+
 /* Full-bleed slide (YouTube / Web URL) — escapes the `.tv-paired` padding
    via fixed positioning so the iframe goes truly edge-to-edge. Z-index
    sits above the page chrome (`.tv-chrome` is z-index 3) but below the

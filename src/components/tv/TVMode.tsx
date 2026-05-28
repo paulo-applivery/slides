@@ -175,10 +175,7 @@ export function TVMode({
   return (
     <div className="tv-root">
       <div className="tv-glow" />
-      <SlideBackground
-        effect={activeAppearance.background}
-        brandColor={activeAppearance.brandColor}
-      />
+      <SlideBackground effect={activeAppearance.background} />
 
       <TVBeam
         key={`${current.id}-${idx}-${current.durationSec}`}
@@ -201,6 +198,7 @@ export function TVMode({
           return (
             <div
               key={s.id}
+              data-transition={s.transition}
               className={`${fullbleed ? "tv-slide-fullbleed" : "tv-slide"} ${active ? "is-active" : ""}`}
             >
               <SlideContent
