@@ -1,9 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "atlas",
-  "main": ".open-next/worker.js",
+  "main": "./worker.ts",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    // Every minute: the processor advances each queued/running HubSpot sync
+    // by one bounded chunk, so large portals complete across many ticks.
+    "crons": ["* * * * *"]
+  },
   "assets": {
     "binding": "ASSETS",
     "directory": ".open-next/assets"

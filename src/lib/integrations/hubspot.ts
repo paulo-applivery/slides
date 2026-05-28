@@ -7,6 +7,7 @@
  * for prod lands in a later slice once we configure the deploy URI.
  */
 import { and, eq, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { db } from "@/lib/db";
 import {
   hubspotContacts,
@@ -14,7 +15,9 @@ import {
   hubspotOwners,
   integrations,
 } from "@/lib/db/schema";
+import type { HubspotSyncPhase, HubspotSyncState } from "@/lib/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { flushUpserts } from "@/lib/db/batch";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HubSpot REST client (direct fetch)
@@ -672,82 +675,239 @@ const REQUIRED_DEAL_PROPS = ["hs_lastmodifieddate", "createdate"];
 const REQUIRED_CONTACT_PROPS = ["lastmodifieddate", "createdate"];
 
 /**
- * Incremental sync.
- *
- * Cursor logic:
- *   - `forceFull: true` OR no prior sync → cursor = 0 (UNIX epoch) so
- *     HubSpot returns every record (`lastmodifieddate >= 1970-01-01`).
- *     The previous default of `now - 90 days` was lossy: any historical
- *     contact / deal that hadn't been touched in 90 days was invisible
- *     to the mirror, which is the root cause of the
- *     "queries undercount HubSpot" report.
- *   - Subsequent runs → `lastSyncedAt - 10min` (10-minute overlap so a
- *     record modified mid-sync isn't missed when the cursor jumps).
- *
- * `forceFull` is the one-time backfill knob: when the operator clicks
- * "Re-import all data" we wipe the mirror tables and run with
- * cursor=0 to repopulate from scratch.
+ * Wall-clock budget for a single sync chunk. The cron processor calls
+ * `runHubspotSyncChunk` once per tick per pending integration; each call
+ * processes pages until this budget is spent, then persists its cursor so
+ * the next tick resumes. Kept comfortably under a Worker's CPU/subrequest
+ * ceilings so an invocation finishes cleanly rather than being killed.
  */
-export async function syncHubspot(
+const SYNC_CHUNK_BUDGET_MS = 20_000;
+
+/** Initial resumable state for a freshly-queued sync. */
+function freshSyncState(
+  forceFull: boolean,
+  lastSyncedAt: Date | null | undefined,
+): HubspotSyncState {
+  const now = Date.now();
+  return {
+    phase: "deals",
+    // forceFull / first-ever sync → epoch 0 (pull everything). Otherwise a
+    // 10-minute overlap so a record modified mid-sync isn't missed.
+    cursorMs: forceFull || !lastSyncedAt ? 0 : lastSyncedAt.getTime() - 10 * 60 * 1000,
+    forceFull,
+    processedDeals: 0,
+    processedContacts: 0,
+    startedAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Queue a sync. Sets `syncStatus = 'queued'` and seeds the resumable
+ * cursor; the Cloudflare cron tick picks it up and grinds through chunks.
+ * We don't run the sync inline because a large portal can't be pulled
+ * within a single request/Worker invocation (subrequest + wall-clock caps).
+ *
+ * `forceFull` wipes the mirror first so a re-import repopulates from
+ * scratch (cursor = 0).
+ */
+export async function enqueueHubspotSync(
   workspaceId: string,
   opts: { forceFull?: boolean } = {},
-) {
+): Promise<void> {
   const row = await getHubspotIntegration(workspaceId);
   if (!row) throw new Error("HubSpot is not connected for this workspace.");
 
-  const token = await decryptSecret(row.accessTokenEnc);
-
-  // Full backfill: clear the mirror so we don't leave orphaned rows
-  // (records deleted in HubSpot since the last partial sync). The
-  // workspace's other tables — owners, dashboards, queries — stay put.
   if (opts.forceFull) {
-    await Promise.all([
-      db.delete(hubspotDeals).where(eq(hubspotDeals.workspaceId, workspaceId)),
-      db.delete(hubspotContacts).where(eq(hubspotContacts.workspaceId, workspaceId)),
-    ]);
+    // Each DELETE is a single server-side statement (one subrequest on D1),
+    // so wiping a large mirror here is cheap and safe within the request.
+    await db.delete(hubspotDeals).where(eq(hubspotDeals.workspaceId, workspaceId));
+    await db
+      .delete(hubspotContacts)
+      .where(eq(hubspotContacts.workspaceId, workspaceId));
   }
 
-  const cursorMs =
-    opts.forceFull || !row.lastSyncedAt
-      ? 0
-      : row.lastSyncedAt.getTime() - 10 * 60 * 1000;
+  const state = freshSyncState(
+    !!opts.forceFull,
+    opts.forceFull ? null : row.lastSyncedAt,
+  );
+  await db
+    .update(integrations)
+    .set({ syncStatus: "queued", syncState: state, lastError: null })
+    .where(eq(integrations.id, row.id));
+}
+
+export type HubspotSyncProgress = {
+  syncStatus: "idle" | "queued" | "running" | "error";
+  phase: HubspotSyncPhase | null;
+  processedDeals: number;
+  processedContacts: number;
+  totalDeals?: number;
+  totalContacts?: number;
+  lastSyncedAt: number | null;
+  recordCount: number;
+  error?: string;
+};
+
+/** Snapshot of sync progress for the /integrations polling UI. */
+export async function getHubspotSyncProgress(
+  workspaceId: string,
+): Promise<HubspotSyncProgress | null> {
+  const row = await getHubspotIntegration(workspaceId);
+  if (!row) return null;
+  const s = row.syncState;
+  return {
+    syncStatus: row.syncStatus,
+    phase: s?.phase ?? null,
+    processedDeals: s?.processedDeals ?? 0,
+    processedContacts: s?.processedContacts ?? 0,
+    totalDeals: s?.totalDeals,
+    totalContacts: s?.totalContacts,
+    lastSyncedAt: row.lastSyncedAt ? row.lastSyncedAt.getTime() : null,
+    recordCount: row.recordCount,
+    error: row.lastError?.message,
+  };
+}
+
+async function totalRecordCount(workspaceId: string): Promise<number> {
+  const [d, c, o] = await Promise.all([
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(hubspotDeals)
+      .where(eq(hubspotDeals.workspaceId, workspaceId)),
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(hubspotContacts)
+      .where(eq(hubspotContacts.workspaceId, workspaceId)),
+    db
+      .select({ n: sql<number>`count(*)` })
+      .from(hubspotOwners)
+      .where(eq(hubspotOwners.workspaceId, workspaceId)),
+  ]);
+  return (
+    Number(d[0]?.n ?? 0) + Number(c[0]?.n ?? 0) + Number(o[0]?.n ?? 0)
+  );
+}
+
+/**
+ * Run ONE bounded chunk of a queued/running sync, resuming from the
+ * persisted cursor. Returns `{ done }` so the cron processor knows whether
+ * to leave the integration `running` (more chunks needed next tick) or it
+ * has reached `idle`.
+ *
+ * Phases run in order deals → contacts → owners → done. Within a phase we
+ * walk `lastmodifieddate` forward: each chunk re-issues a `GTE cursorMs`
+ * search (sorted ascending) and pages with HubSpot's `after` token *within
+ * this invocation only* — the durable cursor is the timestamp watermark,
+ * not the `after` token (which isn't stable across invocations). Upserts
+ * are idempotent by `(workspaceId, hsId)`, so re-touching the boundary
+ * record on resume is harmless.
+ */
+export async function runHubspotSyncChunk(
+  workspaceId: string,
+  opts: { budgetMs?: number } = {},
+): Promise<{ done: boolean; state: HubspotSyncState }> {
+  const deadline = Date.now() + (opts.budgetMs ?? SYNC_CHUNK_BUDGET_MS);
+
+  const row = await getHubspotIntegration(workspaceId);
+  if (!row) throw new Error("HubSpot is not connected for this workspace.");
+  const token = await decryptSecret(row.accessTokenEnc);
+  const selection = getHubspotFieldSelection(row);
+
+  let state: HubspotSyncState = row.syncState ?? freshSyncState(false, row.lastSyncedAt);
+  // Per-phase starting watermark when we advance phases mid-run. Stable
+  // during a run because `lastSyncedAt` is only written when the sync ends.
+  const baseCursorMs =
+    state.forceFull || !row.lastSyncedAt ? 0 : row.lastSyncedAt.getTime() - 10 * 60 * 1000;
 
   try {
-    // Resolve which fields the operator wants synced. The defaults cover
-    // the standard set so a freshly-connected workspace still gets data.
-    const selection = getHubspotFieldSelection(row);
-
-    // Serialize — HubSpot's per-second search budget is shared across all
-    // calls, so paralleling deals + contacts only burns the bucket twice
-    // as fast and provokes 429s. Owners uses a non-search endpoint and
-    // could run in parallel, but the sequential cost is negligible and
-    // keeping it ordered makes the log line `deals → contacts → owners`
-    // easy to reason about.
-    const dealsCount = await syncDeals(token, workspaceId, cursorMs, selection.deals);
-    const contactsCount = await syncContacts(
-      token,
-      workspaceId,
-      cursorMs,
-      selection.contacts,
-    );
-    const ownersCount = await syncOwners(token, workspaceId);
-
-    const recordCount = dealsCount + contactsCount + ownersCount;
     await db
       .update(integrations)
-      .set({
-        status: "active",
-        lastSyncedAt: new Date(),
-        lastError: null,
-        recordCount,
-      })
+      .set({ syncStatus: "running" })
       .where(eq(integrations.id, row.id));
 
-    return { deals: dealsCount, contacts: contactsCount, owners: ownersCount, recordCount };
+    while (Date.now() < deadline && state.phase !== "done") {
+      if (state.phase === "deals") {
+        const { standard, custom } = splitFields(selection.deals, STANDARD_DEAL_PROPS);
+        const properties = Array.from(
+          new Set([...REQUIRED_DEAL_PROPS, ...standard, ...custom.map((f) => f.name)]),
+        );
+        const r = await syncObjectChunk({
+          token,
+          deadline,
+          cursorMs: state.cursorMs,
+          total: state.totalDeals,
+          lastModField: "hs_lastmodifieddate",
+          searchPath: "/crm/v3/objects/deals/search",
+          properties,
+          buildUpsert: (hit) => buildDealUpsert(workspaceId, hit, custom),
+        });
+        state = {
+          ...state,
+          cursorMs: r.cursorMs,
+          processedDeals: state.processedDeals + r.processed,
+          totalDeals: r.total,
+          updatedAt: Date.now(),
+        };
+        if (r.drained) state = { ...state, phase: "contacts", cursorMs: baseCursorMs };
+      } else if (state.phase === "contacts") {
+        const { standard, custom } = splitFields(selection.contacts, STANDARD_CONTACT_PROPS);
+        const properties = Array.from(
+          new Set([...REQUIRED_CONTACT_PROPS, ...standard, ...custom.map((f) => f.name)]),
+        );
+        const r = await syncObjectChunk({
+          token,
+          deadline,
+          cursorMs: state.cursorMs,
+          total: state.totalContacts,
+          lastModField: "lastmodifieddate",
+          searchPath: "/crm/v3/objects/contacts/search",
+          properties,
+          buildUpsert: (hit) => buildContactUpsert(workspaceId, hit, custom),
+        });
+        state = {
+          ...state,
+          cursorMs: r.cursorMs,
+          processedContacts: state.processedContacts + r.processed,
+          totalContacts: r.total,
+          updatedAt: Date.now(),
+        };
+        if (r.drained) state = { ...state, phase: "owners", cursorMs: 0 };
+      } else if (state.phase === "owners") {
+        await syncOwners(token, workspaceId);
+        state = { ...state, phase: "done", updatedAt: Date.now() };
+      }
+      await db
+        .update(integrations)
+        .set({ syncState: state })
+        .where(eq(integrations.id, row.id));
+    }
+
+    if (state.phase === "done") {
+      const recordCount = await totalRecordCount(workspaceId);
+      await db
+        .update(integrations)
+        .set({
+          syncStatus: "idle",
+          syncState: state,
+          status: "active",
+          lastSyncedAt: new Date(),
+          lastError: null,
+          recordCount,
+        })
+        .where(eq(integrations.id, row.id));
+      return { done: true, state };
+    }
+
+    // Budget spent, more work remains — stay `running` so the next cron
+    // tick resumes from the persisted cursor.
+    return { done: false, state };
   } catch (err) {
     await db
       .update(integrations)
       .set({
+        syncStatus: "error",
+        syncState: state,
         status: "error",
         lastError: {
           at: Date.now(),
@@ -757,188 +917,6 @@ export async function syncHubspot(
       .where(eq(integrations.id, row.id));
     throw err;
   }
-}
-
-/**
- * HubSpot Search API caps cursor-based pagination at 10,000 records per
- * filter set. Past 10K the API returns 400. To cover portals with more
- * than 10K modified-since-cursor records we walk `lastmodifieddate` in
- * adaptive windows via recursive bisection: try `[from, to)`; if
- * HubSpot's `total` for the window exceeds the safe limit, halve the
- * window and recurse on each half; otherwise paginate the window
- * normally. Bisection terminates when the window size shrinks below a
- * single millisecond (impossible to have 9500 records in 1ms in
- * practice).
- */
-const HUBSPOT_SEARCH_WINDOW_LIMIT = 9500;
-const HUBSPOT_SEARCH_MAX_BISECT_DEPTH = 24;
-
-/** Page through deals modified since `cursorMs`, upsert into the mirror. */
-async function syncDeals(
-  token: string,
-  workspaceId: string,
-  cursorMs: number,
-  picked: HubspotPickedField[],
-) {
-  // Build the property request list: required + picked. Use a Set for
-  // dedup since required props can also be standard picks.
-  const { standard, custom } = splitFields(picked, STANDARD_DEAL_PROPS);
-  const properties = Array.from(
-    new Set([...REQUIRED_DEAL_PROPS, ...standard, ...custom.map((f) => f.name)]),
-  );
-
-  let skippedMissingCreate = 0;
-
-  const upsertOne = async (d: { id: string; properties: Record<string, string | null | undefined> }) => {
-    const p = d.properties;
-    // Defensive: skip records whose createdate didn't come back in
-    // the response. `createdate` is now in REQUIRED_DEAL_PROPS so
-    // this should be rare, but if HubSpot ever returns a malformed
-    // record we'd rather drop it than fabricate `new Date()` and
-    // misbucket it in date-filtered queries.
-    if (!p.createdate) {
-      skippedMissingCreate++;
-      return false;
-    }
-    const customValues = pickCustomValues(p, custom);
-    await db
-      .insert(hubspotDeals)
-      .values({
-        workspaceId,
-        hsId: d.id,
-        name: p.dealname ?? null,
-        amount: p.amount ?? null,
-        stage: p.dealstage ?? null,
-        pipeline: p.pipeline ?? null,
-        ownerId: p.hubspot_owner_id ?? null,
-        closeDate: p.closedate ? new Date(p.closedate) : null,
-        createdAt: new Date(p.createdate),
-        updatedAt: p.hs_lastmodifieddate
-          ? new Date(p.hs_lastmodifieddate)
-          : new Date(),
-        customProperties: customValues,
-      })
-      .onConflictDoUpdate({
-        target: [hubspotDeals.workspaceId, hubspotDeals.hsId],
-        set: {
-          name: p.dealname ?? null,
-          amount: p.amount ?? null,
-          stage: p.dealstage ?? null,
-          pipeline: p.pipeline ?? null,
-          ownerId: p.hubspot_owner_id ?? null,
-          closeDate: p.closedate ? new Date(p.closedate) : null,
-          updatedAt: p.hs_lastmodifieddate
-            ? new Date(p.hs_lastmodifieddate)
-            : new Date(),
-          customProperties: customValues,
-          syncedAt: new Date(),
-        },
-      });
-    return true;
-  };
-
-  // Walk the window from cursor to "now + 1 day" so we don't miss a
-  // record modified between server clocks during the sync.
-  await searchWindowed({
-    fromMs: cursorMs,
-    toMs: Date.now() + 24 * 60 * 60 * 1000,
-    lastModField: "hs_lastmodifieddate",
-    properties,
-    search: (params) =>
-      hsFetch<SearchResponse>(
-        token,
-        "POST",
-        "/crm/v3/objects/deals/search",
-        params,
-      ),
-    upsertOne: upsertOne as (r: { id: string; properties: Record<string, string | null | undefined> }) => Promise<boolean>,
-  });
-
-  if (skippedMissingCreate > 0) {
-    console.warn(
-      `[hubspot] syncDeals: skipped ${skippedMissingCreate} deals with no createdate (workspace=${workspaceId})`,
-    );
-  }
-
-  // Return cumulative count for the workspace, not just this run.
-  const r = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(hubspotDeals)
-    .where(eq(hubspotDeals.workspaceId, workspaceId));
-  return Number(r[0]?.count ?? 0);
-}
-
-async function syncContacts(
-  token: string,
-  workspaceId: string,
-  cursorMs: number,
-  picked: HubspotPickedField[],
-) {
-  const { standard, custom } = splitFields(picked, STANDARD_CONTACT_PROPS);
-  const properties = Array.from(
-    new Set([...REQUIRED_CONTACT_PROPS, ...standard, ...custom.map((f) => f.name)]),
-  );
-
-  let skippedMissingCreate = 0;
-
-  const upsertOne = async (c: { id: string; properties: Record<string, string | null | undefined> }) => {
-    const p = c.properties;
-    // See syncDeals for why we skip rather than fabricate `new Date()`.
-    if (!p.createdate) {
-      skippedMissingCreate++;
-      return false;
-    }
-    const customValues = pickCustomValues(p, custom);
-    await db
-      .insert(hubspotContacts)
-      .values({
-        workspaceId,
-        hsId: c.id,
-        email: p.email ?? null,
-        ownerId: p.hubspot_owner_id ?? null,
-        lifecycleStage: p.lifecyclestage ?? null,
-        createdAt: new Date(p.createdate),
-        customProperties: customValues,
-      })
-      .onConflictDoUpdate({
-        target: [hubspotContacts.workspaceId, hubspotContacts.hsId],
-        set: {
-          email: p.email ?? null,
-          ownerId: p.hubspot_owner_id ?? null,
-          lifecycleStage: p.lifecyclestage ?? null,
-          customProperties: customValues,
-          syncedAt: new Date(),
-        },
-      });
-    return true;
-  };
-
-  await searchWindowed({
-    fromMs: cursorMs,
-    toMs: Date.now() + 24 * 60 * 60 * 1000,
-    lastModField: "lastmodifieddate",
-    properties,
-    search: (params) =>
-      hsFetch<SearchResponse>(
-        token,
-        "POST",
-        "/crm/v3/objects/contacts/search",
-        params,
-      ),
-    upsertOne: upsertOne as (r: { id: string; properties: Record<string, string | null | undefined> }) => Promise<boolean>,
-  });
-
-  if (skippedMissingCreate > 0) {
-    console.warn(
-      `[hubspot] syncContacts: skipped ${skippedMissingCreate} contacts with no createdate (workspace=${workspaceId})`,
-    );
-  }
-
-  const r = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(hubspotContacts)
-    .where(eq(hubspotContacts.workspaceId, workspaceId));
-  return Number(r[0]?.count ?? 0);
 }
 
 /**
@@ -966,107 +944,175 @@ type SearchRequest = {
 };
 
 /**
- * Walk a `[fromMs, toMs)` window of `lastmodifieddate` and upsert every
- * matching record via `upsertOne`, working around HubSpot's 10K-record
- * pagination ceiling.
- *
- * Algorithm:
- *   1. Ask HubSpot for the first page. It tells us `res.total`.
- *   2. If `total <= 9500`, this window is paginatable end-to-end —
- *      finish it with the normal `after` cursor loop.
- *   3. If `total > 9500`, the window holds too many records for a
- *      single cursor sequence. Bisect by the midpoint timestamp and
- *      recurse on each half. We never call `upsertOne` for the
- *      first-page records here — the recursive halves will re-fetch
- *      them with the narrower filter.
- *   4. Stop bisecting when the window collapses to a single millisecond
- *      (in practice no portal has 9500 records modified in 1 ms) or we
- *      exceed MAX_BISECT_DEPTH (defensive — should never trigger).
- *
- * The depth-limit + minimum-width termination together guarantee the
- * recursion can't loop forever even on a hypothetically pathological
- * portal.
+ * Within a single invocation, HubSpot's `after`-cursor pagination is
+ * capped at 10,000 records per filter+sort. We stay well under that with
+ * a page cap; a chunk that hits the cap (or the wall-clock deadline)
+ * returns `drained: false` with an advanced watermark, and the next cron
+ * tick resumes with a fresh `GTE cursorMs` sequence — so the 10K ceiling
+ * never bites across invocations.
  */
-async function searchWindowed(args: {
-  fromMs: number;
-  toMs: number;
+const INVOCATION_PAGE_CAP = 9000;
+
+/**
+ * Page forward through one CRM object type, resuming from `cursorMs` (a
+ * `lastModField` watermark). Sorts ascending by `lastModField` and walks
+ * `after` pages *within this invocation only*, upserting each page via
+ * `flushUpserts` (batched on D1, transactional on better-sqlite3).
+ *
+ * Stops when one of:
+ *   - the result set is fully drained (`drained: true` → advance phase),
+ *   - the wall-clock `deadline` is reached, or
+ *   - `INVOCATION_PAGE_CAP` records have been fetched this invocation.
+ *
+ * In the latter two cases it returns `drained: false` with `cursorMs`
+ * advanced to the max `lastModField` seen, so the next call resumes with
+ * a fresh `GTE cursorMs` query. Boundary records get re-upserted on
+ * resume, which is harmless because upserts are idempotent by
+ * `(workspaceId, hsId)`.
+ */
+async function syncObjectChunk(args: {
+  token: string;
+  deadline: number;
+  cursorMs: number;
+  total?: number;
   lastModField: string;
+  searchPath: string;
   properties: string[];
-  search: (params: SearchRequest) => Promise<SearchResponse>;
-  upsertOne: (r: SearchHit) => Promise<boolean>;
-  depth?: number;
-}): Promise<void> {
-  const { fromMs, toMs, lastModField, properties, search, upsertOne } = args;
-  const depth = args.depth ?? 0;
+  buildUpsert: (hit: SearchHit) => BatchItem<"sqlite"> | null;
+}): Promise<{ cursorMs: number; processed: number; total?: number; drained: boolean }> {
+  const { token, deadline, cursorMs, lastModField, searchPath, properties, buildUpsert } =
+    args;
 
-  if (toMs <= fromMs) return;
-
-  const fromIso = new Date(fromMs).toISOString();
-  const toIso = new Date(toMs).toISOString();
-
+  const fromIso = new Date(cursorMs).toISOString();
   const baseParams: SearchRequest = {
     filterGroups: [
-      {
-        filters: [
-          {
-            propertyName: lastModField,
-            operator: "GTE",
-            value: fromIso,
-          },
-          {
-            propertyName: lastModField,
-            operator: "LT",
-            value: toIso,
-          },
-        ],
-      },
+      { filters: [{ propertyName: lastModField, operator: "GTE", value: fromIso }] },
     ],
     properties,
     sorts: [lastModField],
     limit: 100,
   };
 
-  // First probe: peek at `total` so we can decide whether to bisect.
-  const probe = await withSearchRateLimit(() => search(baseParams));
-  const total = probe.total ?? 0;
+  let total = args.total;
+  let processed = 0;
+  let fetched = 0;
+  let maxModMs = cursorMs;
+  let after: string | undefined;
+  const pending: BatchItem<"sqlite">[] = [];
 
-  if (total === 0) return;
-
-  // Too many records for a single cursor sequence — bisect and recurse.
-  // Skip processing the probe's results here; the recursive halves
-  // will re-fetch them with the narrower filter (no double-counting
-  // because upserts are idempotent by (workspaceId, hsId) anyway).
-  if (total > HUBSPOT_SEARCH_WINDOW_LIMIT) {
-    if (toMs - fromMs <= 1 || depth >= HUBSPOT_SEARCH_MAX_BISECT_DEPTH) {
-      // Can't bisect further — process what we can (up to the 10K
-      // cap) and accept that anything past 10K in this 1ms slice
-      // will be missed. Effectively unreachable in practice.
-      console.warn(
-        `[hubspot] searchWindowed: cannot bisect [${fromIso}, ${toIso}); total=${total} (workspace records may be undercount)`,
-      );
-    } else {
-      const midMs = Math.floor((fromMs + toMs) / 2);
-      await searchWindowed({ ...args, fromMs, toMs: midMs, depth: depth + 1 });
-      await searchWindowed({ ...args, fromMs: midMs, toMs, depth: depth + 1 });
-      return;
-    }
-  }
-
-  // Window fits — process the probe's first page, then paginate the
-  // rest with `after`.
-  for (const hit of probe.results) {
-    await upsertOne(hit);
-  }
-  let after = probe.paging?.next?.after;
-  while (after) {
+  while (true) {
     const res = await withSearchRateLimit(() =>
-      search({ ...baseParams, after }),
+      hsFetch<SearchResponse>(token, "POST", searchPath, { ...baseParams, after }),
     );
+    if (res.total != null) total = res.total;
+
     for (const hit of res.results) {
-      await upsertOne(hit);
+      const stmt = buildUpsert(hit);
+      if (stmt) {
+        pending.push(stmt);
+        processed++;
+      }
+      const modRaw = hit.properties[lastModField];
+      if (modRaw) {
+        const t = Date.parse(modRaw);
+        if (Number.isFinite(t) && t > maxModMs) maxModMs = t;
+      }
     }
+    fetched += res.results.length;
     after = res.paging?.next?.after;
+
+    // Bound memory: flush once the buffer grows past a couple of batches.
+    if (pending.length >= 200) {
+      await flushUpserts(pending.splice(0, pending.length));
+    }
+
+    if (!after) {
+      await flushUpserts(pending.splice(0, pending.length));
+      // No more pages → the GTE cursorMs set is fully drained.
+      return { cursorMs: maxModMs, processed, total, drained: true };
+    }
+    if (Date.now() >= deadline || fetched >= INVOCATION_PAGE_CAP) {
+      await flushUpserts(pending.splice(0, pending.length));
+      return { cursorMs: maxModMs, processed, total, drained: false };
+    }
   }
+}
+
+/**
+ * Build (don't execute) the upsert statement for one HubSpot deal. Returns
+ * `null` when the record lacks `createdate` — we skip rather than fabricate
+ * `new Date()`, which would misbucket the row in date-filtered queries
+ * (the mirror's `createdAt` is notNull). See [[hubspot-sync]].
+ */
+function buildDealUpsert(
+  workspaceId: string,
+  hit: SearchHit,
+  custom: HubspotPickedField[],
+): BatchItem<"sqlite"> | null {
+  const p = hit.properties;
+  if (!p.createdate) return null;
+  const customValues = pickCustomValues(p, custom);
+  return db
+    .insert(hubspotDeals)
+    .values({
+      workspaceId,
+      hsId: hit.id,
+      name: p.dealname ?? null,
+      amount: p.amount ?? null,
+      stage: p.dealstage ?? null,
+      pipeline: p.pipeline ?? null,
+      ownerId: p.hubspot_owner_id ?? null,
+      closeDate: p.closedate ? new Date(p.closedate) : null,
+      createdAt: new Date(p.createdate),
+      updatedAt: p.hs_lastmodifieddate ? new Date(p.hs_lastmodifieddate) : new Date(),
+      customProperties: customValues,
+    })
+    .onConflictDoUpdate({
+      target: [hubspotDeals.workspaceId, hubspotDeals.hsId],
+      set: {
+        name: p.dealname ?? null,
+        amount: p.amount ?? null,
+        stage: p.dealstage ?? null,
+        pipeline: p.pipeline ?? null,
+        ownerId: p.hubspot_owner_id ?? null,
+        closeDate: p.closedate ? new Date(p.closedate) : null,
+        updatedAt: p.hs_lastmodifieddate ? new Date(p.hs_lastmodifieddate) : new Date(),
+        customProperties: customValues,
+        syncedAt: new Date(),
+      },
+    });
+}
+
+/** Build (don't execute) the upsert statement for one HubSpot contact. */
+function buildContactUpsert(
+  workspaceId: string,
+  hit: SearchHit,
+  custom: HubspotPickedField[],
+): BatchItem<"sqlite"> | null {
+  const p = hit.properties;
+  if (!p.createdate) return null;
+  const customValues = pickCustomValues(p, custom);
+  return db
+    .insert(hubspotContacts)
+    .values({
+      workspaceId,
+      hsId: hit.id,
+      email: p.email ?? null,
+      ownerId: p.hubspot_owner_id ?? null,
+      lifecycleStage: p.lifecyclestage ?? null,
+      createdAt: new Date(p.createdate),
+      customProperties: customValues,
+    })
+    .onConflictDoUpdate({
+      target: [hubspotContacts.workspaceId, hubspotContacts.hsId],
+      set: {
+        email: p.email ?? null,
+        ownerId: p.hubspot_owner_id ?? null,
+        lifecycleStage: p.lifecyclestage ?? null,
+        customProperties: customValues,
+        syncedAt: new Date(),
+      },
+    });
 }
 
 /**

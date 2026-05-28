@@ -9,6 +9,7 @@ import {
   duplicateQueryAction,
   runQueryAction,
 } from "@/lib/queries/actions";
+import { toast } from "@/lib/toast";
 
 /** Per-row dropdown: Edit, Duplicate, Run now, Delete. Hidden for viewers. */
 export function QueryRowMenu({ id, name }: { id: string; name: string }) {
@@ -69,7 +70,15 @@ export function QueryRowMenu({ id, name }: { id: string; name: string }) {
               pick(() =>
                 startTransition(async () => {
                   const res = await duplicateQueryAction(id);
-                  if (res.ok) router.push(`/queries/${res.id}/edit`);
+                  if (res.ok) {
+                    toast.success({ title: "Query duplicated" });
+                    router.push(`/queries/${res.id}/edit`);
+                  } else {
+                    toast.error({
+                      title: "Couldn't duplicate query",
+                      description: res.error,
+                    });
+                  }
                 }),
               )
             }
@@ -83,7 +92,15 @@ export function QueryRowMenu({ id, name }: { id: string; name: string }) {
             onSelect={() =>
               pick(() =>
                 startTransition(async () => {
-                  await runQueryAction(id);
+                  try {
+                    await runQueryAction(id);
+                    toast.success({ title: "Query run" });
+                  } catch (err) {
+                    toast.error({
+                      title: "Couldn't run query",
+                      description: err instanceof Error ? err.message : undefined,
+                    });
+                  }
                 }),
               )
             }
@@ -99,7 +116,15 @@ export function QueryRowMenu({ id, name }: { id: string; name: string }) {
               pick(() => {
                 if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
                 startTransition(async () => {
-                  await deleteQueryAction(id);
+                  try {
+                    await deleteQueryAction(id);
+                    toast.success({ title: "Query deleted" });
+                  } catch (err) {
+                    toast.error({
+                      title: "Couldn't delete query",
+                      description: err instanceof Error ? err.message : undefined,
+                    });
+                  }
                 });
               })
             }

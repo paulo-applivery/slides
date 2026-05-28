@@ -28,6 +28,14 @@ const DASHBOARD_THEMES = ["light", "dark"] as const;
 const JOIN_POLICIES = ["domain-auto", "invite-only"] as const;
 const INTEGRATION_PROVIDERS = ["stripe", "hubspot"] as const;
 const INTEGRATION_STATUSES = ["active", "error", "disconnected"] as const;
+/**
+ * Background-sync lifecycle (separate from connection `status`).
+ *   idle     → nothing pending; `lastSyncedAt` reflects the last good run
+ *   queued   → a sync was requested (button or auto-refresh); cron will pick it up
+ *   running  → a cron tick is actively processing chunks
+ *   error    → last chunk threw; `lastError` carries the message
+ */
+const INTEGRATION_SYNC_STATUSES = ["idle", "queued", "running", "error"] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspaces
@@ -218,6 +226,33 @@ export type HubspotPickedField = {
   options?: Array<{ label: string; value: string }>;
 };
 
+/** Phase the background HubSpot sync is currently working through. */
+export type HubspotSyncPhase = "deals" | "contacts" | "owners" | "done";
+
+/**
+ * Resumable cursor for the chunked HubSpot sync. Persisted on
+ * `integrations.syncState` so a cron tick can pick up exactly where the
+ * previous one left off — required because a single Cloudflare Worker
+ * invocation can't pull a large portal in one go (subrequest + wall-clock
+ * caps). The cursor is the `lastmodifieddate` watermark of the current
+ * phase; we re-issue a `GTE cursorMs` search each tick rather than persist
+ * HubSpot's `after` token (which isn't stable across invocations).
+ */
+export type HubspotSyncState = {
+  phase: HubspotSyncPhase;
+  /** Forward `lastmodifieddate` watermark (unix ms) for the current phase. */
+  cursorMs: number;
+  /** True while a one-shot full backfill is in progress (mirror was wiped). */
+  forceFull: boolean;
+  processedDeals: number;
+  processedContacts: number;
+  /** HubSpot-reported totals captured on the first chunk of each phase. */
+  totalDeals?: number;
+  totalContacts?: number;
+  startedAt: number;
+  updatedAt: number;
+};
+
 export const integrations = sqliteTable(
   "integrations",
   {
@@ -239,6 +274,15 @@ export const integrations = sqliteTable(
     status: text("status", { enum: INTEGRATION_STATUSES })
       .notNull()
       .default("active"),
+    /**
+     * Background-sync lifecycle. Drives the cron processor + progress UI;
+     * independent of connection `status`. See INTEGRATION_SYNC_STATUSES.
+     */
+    syncStatus: text("sync_status", { enum: INTEGRATION_SYNC_STATUSES })
+      .notNull()
+      .default("idle"),
+    /** Resumable sync cursor — see HubspotSyncState. Null until first sync. */
+    syncState: text("sync_state", { mode: "json" }).$type<HubspotSyncState>(),
     lastSyncedAt: integer("last_synced_at", { mode: "timestamp" }),
     lastError: text("last_error", { mode: "json" }).$type<IntegrationLastError>(),
     /** Cumulative record counts displayed on /integrations + sidebar. */

@@ -251,50 +251,50 @@ export function EditWidgetDialog({
   function save() {
     startSave(async () => {
       try {
-      await updateWidgetDisplay(dashboardId, widgetId, {
-        title: title.trim(),
-        titleSize: autoSize ? null : size,
-        // Persist alignment only when it differs from the implicit default
-        // ("left"). Sending `null` for left keeps the saved display blob
-        // small for the common case.
-        titleAlign: align === "left" ? null : align,
-        chip:
-          chipEnabled && chipText.trim()
-            ? {
-                text: chipText.trim(),
-                icon: chipIcon ?? null,
-                color: chipColor,
-                size: chipAutoSize ? null : chipSize,
-              }
-            : null,
-        timePeriod: timePeriodEnabled && timePeriod ? timePeriod : null,
-        // Target is meaningful for gauges (fills the dial) and for
-        // SingleValue tiles (anchor for the query's conditionalColors).
-        // For everything else we leave the field untouched.
-        target:
-          widgetType === "gauge" || widgetType === "singleValue"
-            ? targetEnabled
-              ? target
+        await updateWidgetDisplay(dashboardId, widgetId, {
+          title: title.trim(),
+          titleSize: autoSize ? null : size,
+          // Persist alignment only when it differs from the implicit default
+          // ("left"). Sending `null` for left keeps the saved display blob
+          // small for the common case.
+          titleAlign: align === "left" ? null : align,
+          chip:
+            chipEnabled && chipText.trim()
+              ? {
+                  text: chipText.trim(),
+                  icon: chipIcon ?? null,
+                  color: chipColor,
+                  size: chipAutoSize ? null : chipSize,
+                }
+              : null,
+          timePeriod: timePeriodEnabled && timePeriod ? timePeriod : null,
+          // Target is meaningful for gauges (fills the dial) and for
+          // SingleValue tiles (anchor for the query's conditionalColors).
+          // For everything else we leave the field untouched.
+          target:
+            widgetType === "gauge" || widgetType === "singleValue"
+              ? targetEnabled
+                ? target
+                : null
+              : undefined,
+          // Funnel-only — persist the configured stages. For other
+          // widget types we never touch the field so the server keeps
+          // whatever's already stored (typically nothing).
+          stages: isFunnel
+            ? stages.length > 0
+              ? stages
               : null
             : undefined,
-        // Funnel-only — persist the configured stages. For other
-        // widget types we never touch the field so the server keeps
-        // whatever's already stored (typically nothing).
-        stages: isFunnel
-          ? stages.length > 0
-            ? stages
-            : null
-          : undefined,
-        // Always clear the legacy flat list — we've now migrated to
-        // the per-object shape. The server drops empty values from
-        // `filtersByObject` for us so an "all empty" save still
-        // collapses cleanly.
-        filters: null,
-        filtersByObject:
-          Object.keys(filtersByObject).length > 0 ? filtersByObject : null,
-      });
-      toast.success({ title: "Widget updated" });
-      onOpenChange(false);
+          // Always clear the legacy flat list — we've now migrated to
+          // the per-object shape. The server drops empty values from
+          // `filtersByObject` for us so an "all empty" save still
+          // collapses cleanly.
+          filters: null,
+          filtersByObject:
+            Object.keys(filtersByObject).length > 0 ? filtersByObject : null,
+        });
+        toast.success({ title: "Widget updated" });
+        onOpenChange(false);
       } catch (err) {
         toast.error({
           title: "Couldn't save widget",

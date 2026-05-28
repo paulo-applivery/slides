@@ -64,9 +64,11 @@ export function Sidebar({ footer }: { footer?: ReactNode }) {
       {SECONDARY.map((it) => {
         const I = Icons[it.icon];
         const active = isActive(it.href);
-        // Settings stays disabled until Phase 5 builds the page; everything
-        // else in the Data rail is live now.
-        const isLive = it.href === "/integrations" || it.href === "/queries";
+        // Everything in the Data rail is live now.
+        const isLive =
+          it.href === "/integrations" ||
+          it.href === "/queries" ||
+          it.href === "/settings";
         if (isLive) {
           return (
             <Link

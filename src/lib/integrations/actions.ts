@@ -15,10 +15,12 @@ import {
 import {
   connectHubspot,
   disconnectHubspot,
+  enqueueHubspotSync,
+  getHubspotSyncProgress,
   listHubspotProperties,
-  syncHubspot,
   updateHubspotFieldSelection,
 } from "@/lib/integrations/hubspot";
+import type { HubspotSyncProgress } from "@/lib/integrations/hubspot";
 
 class ForbiddenError extends Error {
   constructor() {
@@ -86,10 +88,11 @@ export async function connectHubspotAction(
     const token = String(formData.get("accessToken") ?? "").trim();
     if (!token) return { ok: false, error: "Paste your HubSpot Private App token." };
     await connectHubspot(workspaceId, token);
+    // Queue the first sync; the Cloudflare cron tick grinds through it in
+    // bounded chunks. The UI polls progress rather than blocking the request
+    // (a large portal can't be pulled within one Worker invocation).
+    await enqueueHubspotSync(workspaceId);
     revalidatePath("/integrations");
-    await syncHubspot(workspaceId);
-    revalidatePath("/integrations");
-    revalidatePath("/dashboards");
     return { ok: true };
   } catch (err) {
     return {
@@ -99,33 +102,35 @@ export async function connectHubspotAction(
   }
 }
 
+/** Queue an incremental sync; the cron tick processes it in chunks. */
 export async function syncHubspotAction(): Promise<void> {
   const { workspaceId } = await requireEditor();
-  await syncHubspot(workspaceId);
+  await enqueueHubspotSync(workspaceId);
   revalidatePath("/integrations");
-  revalidatePath("/dashboards");
 }
 
 /**
- * One-shot full re-import.
+ * Queue a full re-import.
  *
- * Clears the mirror tables and re-pulls from cursor=0, so an existing
+ * Wipes the mirror tables and re-pulls from cursor=0, so an existing
  * partial sync (whose `lastSyncedAt` would otherwise skip historical
  * records) gets a clean backfill. Used when the operator notices the
  * dashboard counts disagree with HubSpot and clicks "Re-import all".
  *
- * This can be slow for large portals — the sync now pages through
- * every modified-since-cursor record until HubSpot stops returning
- * one. We don't background it because /integrations is the right
- * place to wait + see the result, and Cloudflare Workers have a
- * 30-second wall-clock limit anyway.
+ * Backgrounded like the incremental sync — a large portal can't be pulled
+ * within one Worker invocation, so the cron tick grinds through it in
+ * bounded chunks while the UI polls progress.
  */
 export async function reimportHubspotAction(): Promise<void> {
   const { workspaceId } = await requireEditor();
-  await syncHubspot(workspaceId, { forceFull: true });
+  await enqueueHubspotSync(workspaceId, { forceFull: true });
   revalidatePath("/integrations");
-  revalidatePath("/dashboards");
-  revalidatePath("/queries");
+}
+
+/** Poll target for the /integrations UI while a sync runs. */
+export async function getHubspotSyncProgressAction(): Promise<HubspotSyncProgress | null> {
+  const { workspaceId } = await requireEditor();
+  return getHubspotSyncProgress(workspaceId);
 }
 
 export async function disconnectHubspotAction(): Promise<void> {

@@ -37,6 +37,7 @@ import {
   type WizardAggregation,
 } from "@/lib/queries/catalog";
 import { FiltersEditor } from "./FiltersEditor";
+import { toast } from "@/lib/toast";
 
 /**
  * Query wizard — Plecto-style 8-step ordered form.
@@ -433,19 +434,31 @@ export function QueryWizard({
 
   function save() {
     setError(null);
+    let config: QueryConfig;
     try {
-      const config = buildConfig();
-      const finalName = name.trim() || "Untitled query";
-      startSave(async () => {
-        const res = initial
-          ? await updateQueryAction({ id: initial.id, name: finalName, config })
-          : await createQueryAction({ name: finalName, config });
-        if (!res.ok) setError(res.error);
-        else router.push(`/queries`);
-      });
+      config = buildConfig();
     } catch (err) {
+      // buildConfig throws user-facing validation messages ("Pick a
+      // grouping field…") — surface inline next to the actions so the
+      // operator sees it in context with the form.
       setError(err instanceof Error ? err.message : String(err));
+      return;
     }
+    const finalName = name.trim() || "Untitled query";
+    startSave(async () => {
+      const res = initial
+        ? await updateQueryAction({ id: initial.id, name: finalName, config })
+        : await createQueryAction({ name: finalName, config });
+      if (!res.ok) {
+        toast.error({
+          title: initial ? "Couldn't save changes" : "Couldn't save query",
+          description: res.error,
+        });
+        return;
+      }
+      toast.success({ title: initial ? "Query saved" : "Query created" });
+      router.push(`/queries`);
+    });
   }
 
   return (

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icons } from "@/components/ui/Icon";
 import { createWorkspace } from "@/lib/workspace-actions";
+import { toast } from "@/lib/toast";
 
 type WorkspaceOption = { id: string; name: string };
 
@@ -44,6 +45,11 @@ export function WorkspaceSwitcher({
       await update({ workspaceId: id });
       setOpen(false);
       router.refresh();
+    } catch (err) {
+      toast.error({
+        title: "Couldn't switch workspace",
+        description: err instanceof Error ? err.message : undefined,
+      });
     } finally {
       setPending(false);
     }
@@ -57,11 +63,14 @@ export function WorkspaceSwitcher({
     try {
       const { id } = await createWorkspace(trimmed);
       await update({ workspaceId: id }); // switch into the new workspace
+      toast.success({ title: "Workspace created" });
       setOpen(false);
       reset();
       router.refresh();
-    } catch {
-      setError("Couldn't create workspace");
+    } catch (err) {
+      // Keep this one inline — it sits right under the name field in the
+      // create form, so it reads as field-level validation feedback.
+      setError(err instanceof Error ? err.message : "Couldn't create workspace");
     } finally {
       setPending(false);
     }
