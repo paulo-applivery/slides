@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "applivery-atlas",
+  "name": "atlas",
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -12,7 +12,8 @@
     {
       "binding": "DB",
       "database_name": "atlas",
-      "database_id": "914e7591-6a11-4eb0-88ac-e33044cb6448"
+      "database_id": "914e7591-6a11-4eb0-88ac-e33044cb6448",
+      "migrations_dir": "src/lib/db/migrations"
     }
   ]
 }
