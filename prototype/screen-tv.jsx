@@ -72,7 +72,7 @@ function TVUnpaired({ onPair }) {
         <div className="tv-up-left">
           <div className="tv-up-brand">
             <span className="tv-up-mark"/>
-            <span>Applivery Slides</span>
+            <span>Applivery Atlas</span>
           </div>
           <h1 className="tv-up-h1">Pair this screen</h1>
           <p className="tv-up-sub">Scan the QR code with your phone — or enter the PIN at <span className="t-mono">app.applivery.com/pair</span> on any signed-in device.</p>

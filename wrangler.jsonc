@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "applivery-slides",
+  "name": "applivery-atlas",
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -11,9 +11,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "slides-db",
-      // Replace after running: wrangler d1 create slides-db
-      "database_id": "3a49da26-548a-4864-88e6-874a4f02a273"
+      "database_name": "atlas",
+      "database_id": "33acceda-dd19-48ff-bf9b-b0193f74e335"
     }
   ]
 }

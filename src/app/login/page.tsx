@@ -75,7 +75,7 @@ export default function LoginPage({
           Your revenue. Live.
         </h1>
         <p className="t-body" style={{ marginBottom: 24, color: "var(--text-tertiary)" }}>
-          Sign in to Applivery Slides with your work Google account.
+          Sign in to Applivery Atlas with your work Google account.
         </p>
         <GoogleSignInButton from={searchParams?.from} />
         {!showDevLogin && (

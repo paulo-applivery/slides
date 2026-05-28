@@ -93,6 +93,44 @@ export async function renameSlideshow(id: string, name: string): Promise<void> {
   revalidatePath(`/tv/${id}`);
 }
 
+/**
+ * Duplicate a slideshow — copies name (suffixed " (copy)") + the full
+ * slide sequence with fresh slide ids so React keys don't collide between
+ * the original and the clone. Returns the new id so the caller can
+ * navigate to its editor.
+ */
+export async function duplicateSlideshow(
+  id: string,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    const { workspaceId, userId } = await requireEditor();
+    const src = await db.query.slideshows.findFirst({
+      where: and(eq(slideshows.id, id), eq(slideshows.workspaceId, workspaceId)),
+    });
+    if (!src) return { ok: false, error: "Slideshow not found." };
+
+    const newId = crypto.randomUUID();
+    const clonedSlides: Slide[] = (src.slides ?? []).map((s) => ({
+      ...s,
+      id: crypto.randomUUID(),
+    }));
+    await db.insert(slideshows).values({
+      id: newId,
+      workspaceId,
+      name: `${src.name} (copy)`.slice(0, 120),
+      createdBy: userId,
+      slides: clonedSlides,
+    });
+    revalidatePath("/slideshows");
+    return { ok: true, id: newId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to duplicate.",
+    };
+  }
+}
+
 export async function deleteSlideshow(id: string): Promise<void> {
   const { workspaceId } = await requireEditor();
   await db

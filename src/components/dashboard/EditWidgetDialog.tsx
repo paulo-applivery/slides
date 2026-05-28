@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Icons, type IconName } from "@/components/ui/Icon";
+import { Icons } from "@/components/ui/Icon";
+import { ChipIcon } from "@/components/ui/ChipIcon";
+import { IconPicker } from "@/components/ui/IconPicker";
 import { updateWidgetDisplay } from "@/lib/dashboards";
 import {
   getWidgetFilterContext,
@@ -13,9 +15,7 @@ import { FiltersEditor } from "@/components/queries/FiltersEditor";
 import type { Filter } from "@/lib/queries/ast";
 import {
   CHIP_COLORS,
-  CHIP_ICONS,
   type ChipColorKey,
-  type ChipIconKey,
   type WidgetChip,
 } from "./widgetChip";
 import { TimePeriodPicker } from "./TimePeriodPicker";
@@ -162,8 +162,10 @@ export function EditWidgetDialog({
 
   const [chipEnabled, setChipEnabled] = useState(!!currentChip);
   const [chipText, setChipText] = useState(currentChip?.text ?? "");
-  const [chipIcon, setChipIcon] = useState<ChipIconKey>(
-    (currentChip?.icon as ChipIconKey | undefined) ?? "none",
+  // Full iconify id (e.g. `solar:home-bold`), a legacy key, or
+  // undefined for no icon. The IconPicker speaks `string | undefined`.
+  const [chipIcon, setChipIcon] = useState<string | undefined>(
+    currentChip?.icon,
   );
   const [chipColor, setChipColor] = useState<ChipColorKey>(
     (currentChip?.color as ChipColorKey | undefined) ?? "neutral",
@@ -214,7 +216,7 @@ export function EditWidgetDialog({
 
     setChipEnabled(!!currentChip);
     setChipText(currentChip?.text ?? "");
-    setChipIcon((currentChip?.icon as ChipIconKey | undefined) ?? "none");
+    setChipIcon(currentChip?.icon);
     setChipColor((currentChip?.color as ChipColorKey | undefined) ?? "neutral");
     setChipAutoSize(currentChip?.size === undefined);
     setChipSize(currentChip?.size ?? 14);
@@ -258,7 +260,7 @@ export function EditWidgetDialog({
           chipEnabled && chipText.trim()
             ? {
                 text: chipText.trim(),
-                icon: chipIcon === "none" ? null : chipIcon,
+                icon: chipIcon ?? null,
                 color: chipColor,
                 size: chipAutoSize ? null : chipSize,
               }
@@ -297,7 +299,7 @@ export function EditWidgetDialog({
     chipEnabled && chipText.trim()
       ? {
           text: chipText.trim(),
-          icon: chipIcon === "none" ? undefined : chipIcon,
+          icon: chipIcon,
           color: chipColor,
           size: chipAutoSize ? undefined : chipSize,
         }
@@ -540,8 +542,8 @@ function DisplayTab(props: {
   setChipEnabled: (v: boolean) => void;
   chipText: string;
   setChipText: (v: string) => void;
-  chipIcon: ChipIconKey;
-  setChipIcon: (v: ChipIconKey) => void;
+  chipIcon: string | undefined;
+  setChipIcon: (v: string | undefined) => void;
   chipColor: ChipColorKey;
   setChipColor: (v: ChipColorKey) => void;
   chipAutoSize: boolean;
@@ -708,43 +710,7 @@ function DisplayTab(props: {
           />
 
           <SectionLabel style={{ marginTop: 14 }}>Icon</SectionLabel>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(6, 1fr)",
-              gap: 6,
-            }}
-          >
-            {(Object.keys(CHIP_ICONS) as ChipIconKey[]).map((key) => {
-              const Icon = key === "none" ? null : Icons[key as IconName];
-              const active = chipIcon === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setChipIcon(key)}
-                  title={CHIP_ICONS[key].label}
-                  style={{
-                    padding: 8,
-                    background: active ? "var(--primary-soft)" : "var(--bg-elev-2)",
-                    border: `1px solid ${active ? "var(--primary)" : "var(--border)"}`,
-                    borderRadius: 8,
-                    color: active ? "var(--primary)" : "var(--text-secondary)",
-                    display: "grid",
-                    placeItems: "center",
-                    cursor: "pointer",
-                    minHeight: 36,
-                  }}
-                >
-                  {Icon ? (
-                    <Icon size={16} />
-                  ) : (
-                    <span style={{ fontSize: 10, fontWeight: 500 }}>None</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          <IconPicker value={chipIcon} onChange={setChipIcon} />
 
           <SectionLabel style={{ marginTop: 14 }}>Color</SectionLabel>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1630,10 +1596,7 @@ function SizeRow({
 
 function PreviewChip({ chip }: { chip: WidgetChip }) {
   const palette = CHIP_COLORS[chip.color ?? "neutral"];
-  const Icon =
-    chip.icon && chip.icon !== "none"
-      ? (Icons[chip.icon as IconName] ?? null)
-      : null;
+  const hasIcon = !!chip.icon && chip.icon !== "none";
   const iconSize = chip.size ? Math.max(10, Math.round(chip.size * 0.75)) : 14;
   return (
     <span
@@ -1646,7 +1609,7 @@ function PreviewChip({ chip }: { chip: WidgetChip }) {
         } as React.CSSProperties
       }
     >
-      {Icon ? <Icon size={iconSize} /> : null}
+      {hasIcon ? <ChipIcon icon={chip.icon!} size={iconSize} /> : null}
       <span className="widget-chip-text">{chip.text}</span>
     </span>
   );

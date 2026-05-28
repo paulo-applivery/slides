@@ -110,6 +110,40 @@ export async function renameDashboard(id: string, name: string): Promise<void> {
   revalidatePath(`/dashboards/${id}`);
 }
 
+/**
+ * Duplicate a dashboard — copies name (suffixed " (copy)") + the full
+ * widget layout verbatim. Widget ids only need to be unique within a
+ * dashboard, so cloning them into a fresh dashboard is safe. Returns the
+ * new id so the caller can navigate to it.
+ */
+export async function duplicateDashboard(
+  id: string,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    const { workspaceId, userId } = await requireEditor();
+    const src = await db.query.dashboards.findFirst({
+      where: and(eq(dashboards.id, id), eq(dashboards.workspaceId, workspaceId)),
+    });
+    if (!src) return { ok: false, error: "Dashboard not found." };
+
+    const newId = crypto.randomUUID();
+    await db.insert(dashboards).values({
+      id: newId,
+      workspaceId,
+      name: `${src.name} (copy)`.slice(0, 120),
+      createdBy: userId,
+      layout: src.layout ?? { widgets: [] },
+    });
+    revalidatePath("/dashboards");
+    return { ok: true, id: newId };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to duplicate.",
+    };
+  }
+}
+
 /** Soft-archive a dashboard; we never hard-delete. */
 export async function archiveDashboard(id: string): Promise<void> {
   const { workspaceId } = await requireEditor();

@@ -2,9 +2,9 @@
  * Edge middleware — redirects unauthenticated traffic away from the
  * authenticated app shell and bounces authed traffic away from /login.
  *
- * Uses the adapter-less `auth.config` so it stays edge-safe (no Postgres
- * driver). Token-only checks; the DB is touched only by route handlers /
- * server components.
+ * Uses the adapter-less `auth.config` so it stays edge-safe (no DB
+ * driver / native bindings). Token-only checks; the DB is touched only
+ * by route handlers / server components.
  */
 import NextAuth from "next-auth";
 import { NextResponse } from "next/server";

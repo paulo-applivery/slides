@@ -1,4 +1,4 @@
-# Apex (Applivery Slides) — Implementation Plan Overview
+# Apex (Applivery Atlas) — Implementation Plan Overview
 
 A B2B SaaS sales performance dashboard platform — a Plecto alternative — that
 visualizes live revenue KPIs from Stripe and HubSpot, runs slideshows on office
@@ -10,7 +10,7 @@ phases.
 
 ## Working name
 
-**Applivery Slides** (product), Apex (internal codename in the brief).
+**Applivery Atlas** (product), Apex (internal codename in the brief).
 
 ## Stack
 

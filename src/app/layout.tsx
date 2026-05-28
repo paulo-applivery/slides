@@ -24,7 +24,7 @@ const outfit = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Applivery Slides — Sales performance dashboards",
+  title: "Applivery Atlas — Sales performance dashboards",
   description: "Live revenue dashboards and TV slideshows from Stripe and HubSpot.",
   icons: {
     icon: "/assets/favicon_blue.svg",

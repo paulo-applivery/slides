@@ -16,7 +16,7 @@ function client(secretKey: string): Stripe {
   return new Stripe(secretKey, {
     // Let the SDK pin its bundled API version; we sync against whatever the
     // installed `stripe` package targets, so behavior matches its types.
-    appInfo: { name: "Applivery Slides", version: "0.1.0" },
+    appInfo: { name: "Applivery Atlas", version: "0.1.0" },
     // Fetch-based HTTP client so Node + Cloudflare Workers behave the same.
     httpClient: Stripe.createFetchHttpClient(),
   });

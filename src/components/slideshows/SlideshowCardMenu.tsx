@@ -5,49 +5,45 @@ import { useRouter } from "next/navigation";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Icons } from "@/components/ui/Icon";
 import {
-  archiveDashboard,
-  duplicateDashboard,
-  renameDashboard,
-} from "@/lib/dashboards";
+  deleteSlideshow,
+  duplicateSlideshow,
+  renameSlideshow,
+} from "@/lib/slideshows";
 
 /**
- * Per-card overflow menu shown on each dashboard tile. Editors + admins
- * see it; viewers don't render the component at all. Clicks stop
- * propagation so they don't follow the parent <Link> to the detail page.
+ * Per-card overflow menu on each slideshow tile: Rename, Duplicate, Delete.
+ * Editors + admins only; viewers don't render the component. Clicks stop
+ * propagation so they don't follow the parent <Link> to the editor.
  */
-export function DashboardCardMenu({ id, name }: { id: string; name: string }) {
+export function SlideshowCardMenu({ id, name }: { id: string; name: string }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function pick(action: () => void) {
     setMenuOpen(false);
-    // Defer to next tick so the dropdown's exit can start cleanly before
-    // any navigation / confirm / prompt mounts.
     setTimeout(action, 0);
   }
 
   function onRename() {
-    const next = window.prompt("Rename dashboard", name)?.trim();
+    const next = window.prompt("Rename slideshow", name)?.trim();
     if (!next || next === name) return;
     startTransition(async () => {
-      await renameDashboard(id, next);
+      await renameSlideshow(id, next);
     });
   }
 
   function onDuplicate() {
     startTransition(async () => {
-      const res = await duplicateDashboard(id);
-      if (res.ok) router.push(`/dashboards/${res.id}`);
+      const res = await duplicateSlideshow(id);
+      if (res.ok) router.push(`/slideshows/${res.id}/edit`);
     });
   }
 
-  function onArchive() {
-    if (!confirm(`Archive "${name}"? You can restore it later from Settings.`)) {
-      return;
-    }
+  function onDelete() {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
     startTransition(async () => {
-      await archiveDashboard(id);
+      await deleteSlideshow(id);
     });
   }
 
@@ -112,13 +108,13 @@ export function DashboardCardMenu({ id, name }: { id: string; name: string }) {
           <DropdownMenu.Item
             onSelect={(e) => {
               e.preventDefault();
-              pick(onArchive);
+              pick(onDelete);
             }}
             style={itemStyle("danger")}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--danger-soft)")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "")}
           >
-            <Icons.Close size={14} /> Archive
+            <Icons.Close size={14} /> Delete
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

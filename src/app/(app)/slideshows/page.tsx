@@ -7,6 +7,7 @@ import { Icons } from "@/components/ui/Icon";
 import { listSlideshows } from "@/lib/slideshows";
 import { canEdit, type Role } from "@/lib/roles";
 import { NewSlideshowButton } from "@/components/slideshows/NewSlideshowButton";
+import { SlideshowCardMenu } from "@/components/slideshows/SlideshowCardMenu";
 
 /** Slideshows list — cards. Editors + admins see the New CTA. */
 export default async function SlideshowsPage() {
@@ -50,8 +51,14 @@ export default async function SlideshowsPage() {
                   display: "flex",
                   flexDirection: "column",
                   gap: 14,
+                  position: "relative",
                 }}
               >
+                {editable && (
+                  <div style={{ position: "absolute", top: 14, right: 14 }}>
+                    <SlideshowCardMenu id={s.id} name={s.name} />
+                  </div>
+                )}
                 <Link
                   href={`/slideshows/${s.id}/edit`}
                   style={{
@@ -74,7 +81,7 @@ export default async function SlideshowsPage() {
                   >
                     <Icons.Slideshow size={18} variant="bold" />
                   </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: 1, minWidth: 0, paddingRight: 28 }}>
                     <div className="t-h4">{s.name}</div>
                     <div className="t-small">
                       {s.slides.length} {s.slides.length === 1 ? "slide" : "slides"} ·

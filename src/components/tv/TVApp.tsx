@@ -32,7 +32,7 @@ export type TvDataResponse = {
 
 const REFRESH_INTERVAL_MS = 60_000;
 const STORAGE_KEY = (slideshowId: string) =>
-  `applivery-slides:tv-session:${slideshowId}`;
+  `atlas:tv-session:${slideshowId}`;
 
 export function TVApp({ slideshowId }: { slideshowId: string }) {
   const [state, setState] = useState<

@@ -8,8 +8,13 @@
 
 /** Persisted shape on `widget.display.chip`. */
 export type WidgetChip = {
-  /** One of the keys in CHIP_ICONS, or undefined for no icon. */
-  icon?: ChipIconKey;
+  /**
+   * Icon id, or undefined for no icon. Two accepted forms:
+   *  - Full Iconify id from the picker, e.g. `solar:chart-2-bold`
+   *  - Legacy `CHIP_ICONS` key (e.g. `TrendUp`) for chips saved before
+   *    the full picker landed — `ChipIcon` renders both.
+   */
+  icon?: string;
   /** One of the keys in CHIP_COLORS. Drives bg tint + foreground colour. */
   color?: ChipColorKey;
   /** Visible label. Required. */

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Icons, type IconName } from "@/components/ui/Icon";
+import { Icons } from "@/components/ui/Icon";
+import { ChipIcon } from "@/components/ui/ChipIcon";
 import {
   CHIP_COLORS,
   type WidgetChip,
@@ -83,8 +84,7 @@ function WidgetChipPill({ chip }: { chip: WidgetChip }) {
   // so we pin the icon to the explicit size when given, otherwise default
   // to a sensible 14 px. The chip's auto sizing is driven by cqh in CSS.
   const iconSize = chip.size ? Math.max(10, Math.round(chip.size * 0.75)) : 14;
-  const Icon =
-    chip.icon && chip.icon !== "none" ? (Icons[chip.icon as IconName] ?? null) : null;
+  const hasIcon = !!chip.icon && chip.icon !== "none";
 
   const styleVars = {
     "--chip-bg": palette.bg,
@@ -94,7 +94,7 @@ function WidgetChipPill({ chip }: { chip: WidgetChip }) {
 
   return (
     <span className="widget-chip" style={styleVars}>
-      {Icon ? <Icon size={iconSize} /> : null}
+      {hasIcon ? <ChipIcon icon={chip.icon!} size={iconSize} /> : null}
       <span className="widget-chip-text">{chip.text}</span>
     </span>
   );

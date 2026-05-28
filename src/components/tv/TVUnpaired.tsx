@@ -130,7 +130,7 @@ export function TVUnpaired({
           <div className="tv-up-left">
             <div className="tv-up-brand">
               <span className="tv-up-mark" />
-              <span>Applivery Slides</span>
+              <span>Applivery Atlas</span>
             </div>
             <h1 className="tv-up-h1">Pair this screen</h1>
             <p className="tv-up-sub">

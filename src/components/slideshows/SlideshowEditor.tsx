@@ -37,7 +37,11 @@ export function SlideshowEditor({
   initialSlides: Slide[];
   dashboards: Array<{ id: string; name: string }>;
 }) {
-  const [slides] = useState(initialSlides);
+  // Derive directly from the prop — every mutation goes through a server
+  // action that calls `revalidatePath`, which re-renders the page server
+  // component and streams fresh `initialSlides` down. Freezing them in
+  // `useState` would make the editor immutable after the first render.
+  const slides = initialSlides;
   const [selectedId, setSelectedId] = useState<string | null>(
     initialSlides[0]?.id ?? null,
   );

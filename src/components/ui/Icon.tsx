@@ -165,6 +165,12 @@ export const Icons = {
     </Icon>
   ),
   Close: (p: IconComponentProps) => <Icon {...p} d="M18 6 6 18M6 6l12 12" />,
+  Copy: (p: IconComponentProps) => (
+    <Icon {...p}>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </Icon>
+  ),
   Edit: (p: IconComponentProps) => (
     <Icon {...p} d="M12 20h9M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
   ),

@@ -1,14 +1,14 @@
-# Applivery Slides
+# Applivery Atlas
 
 Live sales-performance dashboards and TV slideshows. Built with Next.js 14,
-React 18, TypeScript strict, Tailwind, Drizzle + Postgres, Auth.js v5, and the
-Applivery design system.
+React 18, TypeScript strict, Tailwind, Drizzle + SQLite (Cloudflare D1;
+better-sqlite3 locally), Auth.js v5, and the Applivery design system.
 
 ## Status
 
-**Phase 1 — complete.** Google SSO, Postgres-backed workspaces / users /
+**Phase 1 — complete.** Google SSO, SQLite/D1-backed workspaces / users /
 dashboards, design system tokens, and all five widget components are live.
-Charts run on Recharts + `react-gauge-component`, styled with our tokens.
+Charts run on Recharts + a custom SVG gauge, styled with our tokens.
 
 Next up: **Phase 2** — Stripe + HubSpot OAuth, 5-min cron sync, and the
 no-SQL query builder. See [`implementation-plan/`](./implementation-plan/) for

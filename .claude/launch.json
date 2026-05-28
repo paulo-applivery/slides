@@ -9,13 +9,6 @@
       "autoPort": false
     },
     {
-      "name": "Postgres (Docker)",
-      "runtimeExecutable": "docker",
-      "runtimeArgs": ["compose", "up", "postgres"],
-      "port": 5433,
-      "autoPort": false
-    },
-    {
       "name": "Drizzle Studio",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["db:studio"],
