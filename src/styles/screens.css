@@ -256,7 +256,7 @@
 }
 .tv-up-left { max-width: 540px; }
 .tv-up-brand { display: flex; align-items: center; gap: 14px; font-size: 16px; font-weight: 500; color: var(--text-primary); margin-bottom: 64px; }
-.tv-up-mark { width: 32px; height: 32px; border-radius: 8px; background: var(--brand); position: relative; box-shadow: 0 0 0 4px var(--primary-soft); }
+.tv-up-mark { width: 32px; height: 32px; aspect-ratio: 1 / 1; flex-shrink: 0; border-radius: 8px; background: var(--brand); position: relative; box-shadow: 0 0 0 4px var(--primary-soft); }
 .tv-up-mark::after { content: ''; position: absolute; inset: 8px; background: #fff; clip-path: polygon(50% 0%, 100% 100%, 50% 70%, 0% 100%); }
 .tv-up-h1 { font-size: 56px; font-weight: 500; color: var(--text-primary); letter-spacing: -0.025em; line-height: 1.1; margin: 0 0 18px; }
 .tv-up-sub { font-size: 18px; line-height: 1.5; color: var(--text-tertiary); margin: 0 0 36px; }
@@ -310,7 +310,7 @@
 .tv-bl { bottom: 28px; left: 36px; }
 .tv-br { bottom: 28px; right: 36px; }
 
-.tv-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--brand); position: relative; box-shadow: 0 0 0 3px var(--primary-soft); }
+.tv-mark { width: 28px; height: 28px; aspect-ratio: 1 / 1; flex-shrink: 0; border-radius: 7px; background: var(--brand); position: relative; box-shadow: 0 0 0 3px var(--primary-soft); }
 .tv-mark::after { content: ''; position: absolute; inset: 7px; background: #fff; clip-path: polygon(50% 0%, 100% 100%, 50% 70%, 0% 100%); }
 .tv-ws-name { font-size: 14px; color: var(--text-primary); font-weight: 500; }
 .tv-ws-dash { font-size: 11px; color: var(--text-muted); }

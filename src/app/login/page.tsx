@@ -57,6 +57,8 @@ export default function LoginPage({
           style={{
             width: 48,
             height: 48,
+            aspectRatio: "1 / 1",
+            flexShrink: 0,
             borderRadius: 12,
             background: "var(--primary)",
             margin: "0 auto 20px",
