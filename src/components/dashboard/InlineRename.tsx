@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { renameDashboard } from "@/lib/dashboards";
+import { toast } from "@/lib/toast";
 
 /**
  * Click-to-edit dashboard name. Renders the name inline; clicking turns
@@ -52,7 +53,17 @@ export function InlineRename({
     }
     savedRef.current = next;
     startTransition(async () => {
-      await renameDashboard(id, next);
+      try {
+        await renameDashboard(id, next);
+      } catch (err) {
+        // Revert the optimistic local name so the UI matches the server.
+        setName(savedRef.current === next ? initialName : savedRef.current);
+        savedRef.current = initialName;
+        toast.error({
+          title: "Couldn't rename dashboard",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 

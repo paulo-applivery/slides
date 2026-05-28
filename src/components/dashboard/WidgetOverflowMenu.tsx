@@ -8,6 +8,7 @@ import {
   duplicateWidget,
   removeWidget,
 } from "@/lib/dashboards";
+import { toast } from "@/lib/toast";
 import { QueryPickerDialog } from "./QueryPickerDialog";
 import { EditWidgetDialog } from "./EditWidgetDialog";
 import type { WidgetChip } from "./widgetChip";
@@ -184,7 +185,15 @@ export function WidgetOverflowMenu({
                     onSelect={() =>
                       pick(() =>
                         startTransition(async () => {
-                          await bindWidget(dashboardId, widgetId, null);
+                          try {
+                            await bindWidget(dashboardId, widgetId, null);
+                            toast.success({ title: "Query unbound" });
+                          } catch (err) {
+                            toast.error({
+                              title: "Couldn't unbind query",
+                              description: err instanceof Error ? err.message : undefined,
+                            });
+                          }
                         }),
                       )
                     }
@@ -202,7 +211,17 @@ export function WidgetOverflowMenu({
               onSelect={() =>
                 pick(() =>
                   startTransition(async () => {
-                    await duplicateWidget(dashboardId, widgetId);
+                    try {
+                      const res = await duplicateWidget(dashboardId, widgetId);
+                      if (res) toast.success({ title: "Widget duplicated" });
+                      else
+                        toast.error({ title: "Couldn't duplicate widget" });
+                    } catch (err) {
+                      toast.error({
+                        title: "Couldn't duplicate widget",
+                        description: err instanceof Error ? err.message : undefined,
+                      });
+                    }
                   }),
                 )
               }
@@ -217,7 +236,15 @@ export function WidgetOverflowMenu({
                 pick(() => {
                   if (!confirm(`Remove this ${widgetType} widget?`)) return;
                   startTransition(async () => {
-                    await removeWidget(dashboardId, widgetId);
+                    try {
+                      await removeWidget(dashboardId, widgetId);
+                      toast.success({ title: "Widget removed" });
+                    } catch (err) {
+                      toast.error({
+                        title: "Couldn't remove widget",
+                        description: err instanceof Error ? err.message : undefined,
+                      });
+                    }
                   });
                 })
               }

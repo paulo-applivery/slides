@@ -9,6 +9,7 @@ import {
   duplicateSlideshow,
   renameSlideshow,
 } from "@/lib/slideshows";
+import { toast } from "@/lib/toast";
 
 /**
  * Per-card overflow menu on each slideshow tile: Rename, Duplicate, Delete.
@@ -29,21 +30,45 @@ export function SlideshowCardMenu({ id, name }: { id: string; name: string }) {
     const next = window.prompt("Rename slideshow", name)?.trim();
     if (!next || next === name) return;
     startTransition(async () => {
-      await renameSlideshow(id, next);
+      try {
+        await renameSlideshow(id, next);
+        toast.success({ title: "Slideshow renamed" });
+      } catch (err) {
+        toast.error({
+          title: "Couldn't rename slideshow",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 
   function onDuplicate() {
     startTransition(async () => {
       const res = await duplicateSlideshow(id);
-      if (res.ok) router.push(`/slideshows/${res.id}/edit`);
+      if (res.ok) {
+        toast.success({ title: "Slideshow duplicated" });
+        router.push(`/slideshows/${res.id}/edit`);
+      } else {
+        toast.error({
+          title: "Couldn't duplicate slideshow",
+          description: res.error,
+        });
+      }
     });
   }
 
   function onDelete() {
     if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
     startTransition(async () => {
-      await deleteSlideshow(id);
+      try {
+        await deleteSlideshow(id);
+        toast.success({ title: "Slideshow deleted" });
+      } catch (err) {
+        toast.error({
+          title: "Couldn't delete slideshow",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 

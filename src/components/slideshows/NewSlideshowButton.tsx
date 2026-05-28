@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { Icons } from "@/components/ui/Icon";
 import { createSlideshow } from "@/lib/slideshows";
+import { toast } from "@/lib/toast";
 
 /** Wraps createSlideshow server action with a pending state. */
 export function NewSlideshowButton({ primary }: { primary?: boolean }) {
@@ -14,7 +15,14 @@ export function NewSlideshowButton({ primary }: { primary?: boolean }) {
       disabled={pending}
       onClick={() => {
         startTransition(async () => {
-          await createSlideshow();
+          try {
+            await createSlideshow();
+          } catch (err) {
+            toast.error({
+              title: "Couldn't create slideshow",
+              description: err instanceof Error ? err.message : undefined,
+            });
+          }
         });
       }}
     >

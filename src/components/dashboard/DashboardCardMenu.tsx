@@ -9,6 +9,7 @@ import {
   duplicateDashboard,
   renameDashboard,
 } from "@/lib/dashboards";
+import { toast } from "@/lib/toast";
 
 /**
  * Per-card overflow menu shown on each dashboard tile. Editors + admins
@@ -31,14 +32,30 @@ export function DashboardCardMenu({ id, name }: { id: string; name: string }) {
     const next = window.prompt("Rename dashboard", name)?.trim();
     if (!next || next === name) return;
     startTransition(async () => {
-      await renameDashboard(id, next);
+      try {
+        await renameDashboard(id, next);
+        toast.success({ title: "Dashboard renamed" });
+      } catch (err) {
+        toast.error({
+          title: "Couldn't rename dashboard",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 
   function onDuplicate() {
     startTransition(async () => {
       const res = await duplicateDashboard(id);
-      if (res.ok) router.push(`/dashboards/${res.id}`);
+      if (res.ok) {
+        toast.success({ title: "Dashboard duplicated" });
+        router.push(`/dashboards/${res.id}`);
+      } else {
+        toast.error({
+          title: "Couldn't duplicate dashboard",
+          description: res.error,
+        });
+      }
     });
   }
 
@@ -47,7 +64,15 @@ export function DashboardCardMenu({ id, name }: { id: string; name: string }) {
       return;
     }
     startTransition(async () => {
-      await archiveDashboard(id);
+      try {
+        await archiveDashboard(id);
+        toast.success({ title: "Dashboard archived" });
+      } catch (err) {
+        toast.error({
+          title: "Couldn't archive dashboard",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 

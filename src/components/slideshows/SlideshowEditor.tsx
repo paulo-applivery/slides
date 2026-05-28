@@ -18,6 +18,24 @@ import {
   DEFAULT_SLIDE_APPEARANCE,
   type BackgroundEffect,
 } from "@/lib/appearance";
+import { toast } from "@/lib/toast";
+
+/**
+ * Run a void-returning server action, surfacing any throw as an error
+ * toast. Used for the editor's frequent slide tweaks (move / duration /
+ * transition / appearance) where a silent failure would otherwise leave
+ * the UI looking stuck.
+ */
+async function guard(fn: () => Promise<void>, errorTitle: string) {
+  try {
+    await fn();
+  } catch (err) {
+    toast.error({
+      title: errorTitle,
+      description: err instanceof Error ? err.message : undefined,
+    });
+  }
+}
 
 /**
  * Two-pane editor.
@@ -153,9 +171,12 @@ export function SlideshowEditor({
                     className="btn btn-sm btn-ghost"
                     disabled={pending || slides[0].id === selected.id}
                     onClick={() => {
-                      startTransition(async () => {
-                        await moveSlide(slideshowId, selected.id, "up");
-                      });
+                      startTransition(() =>
+                        guard(
+                          () => moveSlide(slideshowId, selected.id, "up"),
+                          "Couldn't reorder slide",
+                        ),
+                      );
                     }}
                   >
                     <Icons.ArrowUp size={12} />
@@ -167,9 +188,12 @@ export function SlideshowEditor({
                       pending || slides[slides.length - 1].id === selected.id
                     }
                     onClick={() => {
-                      startTransition(async () => {
-                        await moveSlide(slideshowId, selected.id, "down");
-                      });
+                      startTransition(() =>
+                        guard(
+                          () => moveSlide(slideshowId, selected.id, "down"),
+                          "Couldn't reorder slide",
+                        ),
+                      );
                     }}
                   >
                     <Icons.ArrowDown size={12} />
@@ -181,7 +205,15 @@ export function SlideshowEditor({
                     onClick={() => {
                       if (!confirm("Remove this slide?")) return;
                       startTransition(async () => {
-                        await removeSlide(slideshowId, selected.id);
+                        try {
+                          await removeSlide(slideshowId, selected.id);
+                          toast.success({ title: "Slide removed" });
+                        } catch (err) {
+                          toast.error({
+                            title: "Couldn't remove slide",
+                            description: err instanceof Error ? err.message : undefined,
+                          });
+                        }
                       });
                     }}
                     style={{ color: "var(--danger)" }}
@@ -219,11 +251,15 @@ export function SlideshowEditor({
                           type="button"
                           disabled={pending}
                           onClick={() => {
-                            startTransition(async () => {
-                              await updateSlide(slideshowId, selected.id, {
-                                durationSec: Math.max(5, selected.durationSec - 5),
-                              });
-                            });
+                            startTransition(() =>
+                              guard(
+                                () =>
+                                  updateSlide(slideshowId, selected.id, {
+                                    durationSec: Math.max(5, selected.durationSec - 5),
+                                  }),
+                                "Couldn't update duration",
+                              ),
+                            );
                           }}
                         >
                           −
@@ -232,11 +268,15 @@ export function SlideshowEditor({
                           type="button"
                           disabled={pending}
                           onClick={() => {
-                            startTransition(async () => {
-                              await updateSlide(slideshowId, selected.id, {
-                                durationSec: selected.durationSec + 5,
-                              });
-                            });
+                            startTransition(() =>
+                              guard(
+                                () =>
+                                  updateSlide(slideshowId, selected.id, {
+                                    durationSec: selected.durationSec + 5,
+                                  }),
+                                "Couldn't update duration",
+                              ),
+                            );
                           }}
                         >
                           +
@@ -254,11 +294,15 @@ export function SlideshowEditor({
                           className={`ss-seg ${selected.transition === t ? "active" : ""}`}
                           disabled={pending}
                           onClick={() => {
-                            startTransition(async () => {
-                              await updateSlide(slideshowId, selected.id, {
-                                transition: t,
-                              });
-                            });
+                            startTransition(() =>
+                              guard(
+                                () =>
+                                  updateSlide(slideshowId, selected.id, {
+                                    transition: t,
+                                  }),
+                                "Couldn't update transition",
+                              ),
+                            );
                           }}
                         >
                           {t === "crossfade"
@@ -353,9 +397,12 @@ function SlideAppearanceControls({
   const [pending, startTransition] = useTransition();
 
   function commit(patch: Parameters<typeof updateSlideAppearance>[2]) {
-    startTransition(async () => {
-      await updateSlideAppearance(slideshowId, slide.id, patch);
-    });
+    startTransition(() =>
+      guard(
+        () => updateSlideAppearance(slideshowId, slide.id, patch),
+        "Couldn't update appearance",
+      ),
+    );
   }
 
   return (
@@ -612,9 +659,18 @@ function AddSlideDialog({
   function pickDashboard(dashboardId: string) {
     setPendingKey(dashboardId);
     startTransition(async () => {
-      await addDashboardSlide(slideshowId, dashboardId);
-      reset();
-      onOpenChange(false);
+      try {
+        await addDashboardSlide(slideshowId, dashboardId);
+        toast.success({ title: "Slide added" });
+        reset();
+        onOpenChange(false);
+      } catch (err) {
+        setPendingKey(null);
+        toast.error({
+          title: "Couldn't add slide",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 
@@ -631,6 +687,7 @@ function AddSlideDialog({
         setPendingKey(null);
         return;
       }
+      toast.success({ title: "Slide added" });
       reset();
       onOpenChange(false);
     });

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { renameSlideshow } from "@/lib/slideshows";
+import { toast } from "@/lib/toast";
 
 /** Click-to-edit slideshow name shown in the TopBar. */
 export function InlineRename({
@@ -38,7 +39,16 @@ export function InlineRename({
     }
     savedRef.current = next;
     startTransition(async () => {
-      await renameSlideshow(id, next);
+      try {
+        await renameSlideshow(id, next);
+      } catch (err) {
+        setName(initialName);
+        savedRef.current = initialName;
+        toast.error({
+          title: "Couldn't rename slideshow",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { connectHubspotAction } from "@/lib/integrations/actions";
 import { Icons } from "@/components/ui/Icon";
+import { toast } from "@/lib/toast";
 
 /**
  * HubSpot connect form — Private App access token entry.
@@ -13,7 +14,6 @@ import { Icons } from "@/components/ui/Icon";
  */
 export function HubspotConnectForm() {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   if (!open) {
@@ -32,12 +32,21 @@ export function HubspotConnectForm() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        setError(null);
         const formData = new FormData(e.currentTarget);
         startTransition(async () => {
           const res = await connectHubspotAction(undefined, formData);
-          if (!res.ok) setError(res.error ?? "Connection failed.");
-          else setOpen(false);
+          if (!res.ok) {
+            toast.error({
+              title: "Couldn't connect HubSpot",
+              description: res.error ?? "Connection failed.",
+            });
+          } else {
+            setOpen(false);
+            toast.success({
+              title: "HubSpot connected",
+              description: "We're importing your contacts and deals now.",
+            });
+          }
         });
       }}
       style={{
@@ -83,20 +92,12 @@ export function HubspotConnectForm() {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={() => {
-            setOpen(false);
-            setError(null);
-          }}
+          onClick={() => setOpen(false)}
           disabled={pending}
         >
           Cancel
         </button>
       </div>
-      {error && (
-        <p className="t-small" style={{ color: "var(--danger)" }}>
-          {error}
-        </p>
-      )}
     </form>
   );
 }

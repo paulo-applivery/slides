@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { Icons } from "@/components/ui/Icon";
 import {
   disconnectHubspotAction,
   reimportHubspotAction,
   syncHubspotAction,
 } from "@/lib/integrations/actions";
+import { toast } from "@/lib/toast";
 
 export function HubspotActions() {
   const [syncing, startSync] = useTransition();
   const [reimporting, startReimport] = useTransition();
   const [disconnecting, startDisconnect] = useTransition();
-  const [syncError, setSyncError] = useState<string | null>(null);
 
   return (
     <div style={{ display: "flex", gap: 8, flexDirection: "column", alignItems: "flex-end" }}>
@@ -22,12 +22,15 @@ export function HubspotActions() {
           className="btn btn-sm"
           disabled={syncing || reimporting}
           onClick={() => {
-            setSyncError(null);
             startSync(async () => {
               try {
                 await syncHubspotAction();
+                toast.success({ title: "HubSpot synced" });
               } catch (err) {
-                setSyncError(err instanceof Error ? err.message : "Sync failed.");
+                toast.error({
+                  title: "HubSpot sync failed",
+                  description: err instanceof Error ? err.message : undefined,
+                });
               }
             });
           }}
@@ -46,12 +49,18 @@ export function HubspotActions() {
               )
             )
               return;
-            setSyncError(null);
             startReimport(async () => {
               try {
                 await reimportHubspotAction();
+                toast.success({
+                  title: "Re-import complete",
+                  description: "Every contact and deal was pulled fresh.",
+                });
               } catch (err) {
-                setSyncError(err instanceof Error ? err.message : "Re-import failed.");
+                toast.error({
+                  title: "Re-import failed",
+                  description: err instanceof Error ? err.message : undefined,
+                });
               }
             });
           }}
@@ -66,7 +75,15 @@ export function HubspotActions() {
           onClick={() => {
             if (!confirm("Disconnect HubSpot? Synced data will be removed.")) return;
             startDisconnect(async () => {
-              await disconnectHubspotAction();
+              try {
+                await disconnectHubspotAction();
+                toast.success({ title: "HubSpot disconnected" });
+              } catch (err) {
+                toast.error({
+                  title: "Couldn't disconnect HubSpot",
+                  description: err instanceof Error ? err.message : undefined,
+                });
+              }
             });
           }}
           style={{ color: "var(--danger)", borderColor: "var(--danger-soft)" }}
@@ -74,11 +91,6 @@ export function HubspotActions() {
           {disconnecting ? "Disconnecting…" : "Disconnect"}
         </button>
       </div>
-      {syncError && (
-        <p className="t-small" style={{ color: "var(--danger)" }}>
-          {syncError}
-        </p>
-      )}
     </div>
   );
 }

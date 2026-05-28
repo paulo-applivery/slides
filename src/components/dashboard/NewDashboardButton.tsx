@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { Icons } from "@/components/ui/Icon";
 import { createDashboard } from "@/lib/dashboards";
+import { toast } from "@/lib/toast";
 
 /**
  * "New dashboard" CTA. Wraps the createDashboard server action in a
@@ -31,7 +32,14 @@ export function NewDashboardButton({
       disabled={pending}
       onClick={() => {
         startTransition(async () => {
-          await createDashboard();
+          try {
+            await createDashboard();
+          } catch (err) {
+            toast.error({
+              title: "Couldn't create dashboard",
+              description: err instanceof Error ? err.message : undefined,
+            });
+          }
         });
       }}
     >

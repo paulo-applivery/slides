@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Icons } from "@/components/ui/Icon";
 import { bindWidget } from "@/lib/dashboards";
 import { listQueriesForPicker } from "@/lib/queries/actions";
+import { toast } from "@/lib/toast";
 import { WIDGET_ACCEPTS, type WidgetType } from "@/lib/queries/compat";
 
 type PickerRow = Awaited<ReturnType<typeof listQueriesForPicker>>[number];
@@ -39,7 +40,10 @@ export function QueryPickerDialog({
     setRows(null);
     listQueriesForPicker()
       .then(setRows)
-      .catch(() => setRows([]));
+      .catch(() => {
+        setRows([]);
+        toast.error({ title: "Couldn't load queries" });
+      });
   }, [open]);
 
   const compatible = (rows ?? []).filter((r) => accepted.includes(r.kind));
@@ -48,9 +52,18 @@ export function QueryPickerDialog({
   function pick(id: string) {
     setPendingId(id);
     startTransition(async () => {
-      await bindWidget(dashboardId, widgetId, id);
-      setPendingId(null);
-      onOpenChange(false);
+      try {
+        await bindWidget(dashboardId, widgetId, id);
+        toast.success({ title: "Query bound" });
+        onOpenChange(false);
+      } catch (err) {
+        toast.error({
+          title: "Couldn't bind query",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      } finally {
+        setPendingId(null);
+      }
     });
   }
 

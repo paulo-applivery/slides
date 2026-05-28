@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Icons } from "@/components/ui/Icon";
 import { addWidget } from "@/lib/dashboards";
+import { toast } from "@/lib/toast";
 import type { WidgetType } from "@/lib/queries/compat";
 
 const TYPES: Array<{
@@ -66,9 +67,17 @@ export function AddWidgetButton({
   function pick(type: WidgetType) {
     setPendingType(type);
     startTransition(async () => {
-      await addWidget(dashboardId, type);
-      setPendingType(null);
-      setOpen(false);
+      try {
+        await addWidget(dashboardId, type);
+        setOpen(false);
+      } catch (err) {
+        toast.error({
+          title: "Couldn't add widget",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      } finally {
+        setPendingType(null);
+      }
     });
   }
 

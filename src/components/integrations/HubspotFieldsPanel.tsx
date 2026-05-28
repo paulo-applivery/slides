@@ -12,6 +12,7 @@ import type {
   HubspotPickedField,
   HubspotPropertyInfo,
 } from "@/lib/integrations/hubspot";
+import { toast } from "@/lib/toast";
 
 /**
  * Field-picker for a connected HubSpot integration.
@@ -39,7 +40,6 @@ export function HubspotFieldsPanel({
     Record<HubspotObjectKey, HubspotPropertyInfo[]> | null
   >(null);
   const [selection, setSelection] = useState<HubspotFieldSelection>(initialSelection);
-  const [savedFlash, setSavedFlash] = useState(false);
   const [search, setSearch] = useState("");
 
   // Lazy: only hit the HubSpot API once the panel is expanded.
@@ -97,10 +97,10 @@ export function HubspotFieldsPanel({
     setError(null);
     startSave(async () => {
       const res = await updateHubspotFieldSelectionAction(selection);
-      if (!res.ok) setError(res.error);
-      else {
-        setSavedFlash(true);
-        setTimeout(() => setSavedFlash(false), 1800);
+      if (!res.ok) {
+        toast.error({ title: "Couldn't save fields", description: res.error });
+      } else {
+        toast.success({ title: "Fields saved" });
       }
     });
   }
@@ -243,14 +243,6 @@ export function HubspotFieldsPanel({
                   marginTop: 14,
                 }}
               >
-                {savedFlash && (
-                  <span
-                    className="t-small"
-                    style={{ color: "var(--success)" }}
-                  >
-                    ✓ Saved
-                  </span>
-                )}
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"

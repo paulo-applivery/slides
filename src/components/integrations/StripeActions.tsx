@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { Icons } from "@/components/ui/Icon";
 import {
   disconnectStripeAction,
   syncStripeAction,
 } from "@/lib/integrations/actions";
+import { toast } from "@/lib/toast";
 
 /** Connected-state actions: Sync Now + Disconnect. */
 export function StripeActions() {
   const [syncing, startSync] = useTransition();
   const [disconnecting, startDisconnect] = useTransition();
-  const [syncError, setSyncError] = useState<string | null>(null);
 
   return (
     <div style={{ display: "flex", gap: 8, flexDirection: "column", alignItems: "flex-end" }}>
@@ -21,12 +21,15 @@ export function StripeActions() {
           className="btn btn-sm"
           disabled={syncing}
           onClick={() => {
-            setSyncError(null);
             startSync(async () => {
               try {
                 await syncStripeAction();
+                toast.success({ title: "Stripe synced" });
               } catch (err) {
-                setSyncError(err instanceof Error ? err.message : "Sync failed.");
+                toast.error({
+                  title: "Stripe sync failed",
+                  description: err instanceof Error ? err.message : undefined,
+                });
               }
             });
           }}
@@ -40,7 +43,15 @@ export function StripeActions() {
           onClick={() => {
             if (!confirm("Disconnect Stripe? Synced data will be removed.")) return;
             startDisconnect(async () => {
-              await disconnectStripeAction();
+              try {
+                await disconnectStripeAction();
+                toast.success({ title: "Stripe disconnected" });
+              } catch (err) {
+                toast.error({
+                  title: "Couldn't disconnect Stripe",
+                  description: err instanceof Error ? err.message : undefined,
+                });
+              }
             });
           }}
           style={{ color: "var(--danger)", borderColor: "var(--danger-soft)" }}
@@ -48,11 +59,6 @@ export function StripeActions() {
           {disconnecting ? "Disconnecting…" : "Disconnect"}
         </button>
       </div>
-      {syncError && (
-        <p className="t-small" style={{ color: "var(--danger)" }}>
-          {syncError}
-        </p>
-      )}
     </div>
   );
 }

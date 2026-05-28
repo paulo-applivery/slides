@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { Icons } from "@/components/ui/Icon";
 import { setDashboardTheme } from "@/lib/dashboards";
+import { toast } from "@/lib/toast";
 import type { DashboardTheme } from "@/lib/appearance";
 
 /**
@@ -56,9 +57,18 @@ export function DashboardThemeControl({
       title={`Theme: ${theme} — switch to ${next}`}
       disabled={pending}
       onClick={() => {
+        const prev = theme;
         setTheme(next);
         startTransition(async () => {
-          await setDashboardTheme(dashboardId, next);
+          try {
+            await setDashboardTheme(dashboardId, next);
+          } catch (err) {
+            setTheme(prev);
+            toast.error({
+              title: "Couldn't save theme",
+              description: err instanceof Error ? err.message : undefined,
+            });
+          }
         });
       }}
     >

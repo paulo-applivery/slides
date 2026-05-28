@@ -10,6 +10,7 @@ import {
   getWidgetFilterContext,
   listQueriesForPicker,
 } from "@/lib/queries/actions";
+import { toast } from "@/lib/toast";
 import { dateFieldsForSource, objectFromMetricId } from "@/lib/queries/catalog";
 import { FiltersEditor } from "@/components/queries/FiltersEditor";
 import type { Filter } from "@/lib/queries/ast";
@@ -249,6 +250,7 @@ export function EditWidgetDialog({
 
   function save() {
     startSave(async () => {
+      try {
       await updateWidgetDisplay(dashboardId, widgetId, {
         title: title.trim(),
         titleSize: autoSize ? null : size,
@@ -291,7 +293,14 @@ export function EditWidgetDialog({
         filtersByObject:
           Object.keys(filtersByObject).length > 0 ? filtersByObject : null,
       });
+      toast.success({ title: "Widget updated" });
       onOpenChange(false);
+      } catch (err) {
+        toast.error({
+          title: "Couldn't save widget",
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
     });
   }
 

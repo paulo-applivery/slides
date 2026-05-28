@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { connectStripeAction } from "@/lib/integrations/actions";
 import { Icons } from "@/components/ui/Icon";
+import { toast } from "@/lib/toast";
 
 /**
  * Inline connect form for the Stripe integration card.
@@ -16,7 +17,6 @@ import { Icons } from "@/components/ui/Icon";
  */
 export function StripeConnectForm() {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   if (!open) {
@@ -35,12 +35,21 @@ export function StripeConnectForm() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        setError(null);
         const formData = new FormData(e.currentTarget);
         startTransition(async () => {
           const res = await connectStripeAction(undefined, formData);
-          if (!res.ok) setError(res.error ?? "Connection failed.");
-          else setOpen(false);
+          if (!res.ok) {
+            toast.error({
+              title: "Couldn't connect Stripe",
+              description: res.error ?? "Connection failed.",
+            });
+          } else {
+            setOpen(false);
+            toast.success({
+              title: "Stripe connected",
+              description: "We're syncing your data now.",
+            });
+          }
         });
       }}
       style={{
@@ -91,20 +100,12 @@ export function StripeConnectForm() {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          onClick={() => {
-            setOpen(false);
-            setError(null);
-          }}
+          onClick={() => setOpen(false)}
           disabled={pending}
         >
           Cancel
         </button>
       </div>
-      {error && (
-        <p className="t-small" style={{ color: "var(--danger)" }}>
-          {error}
-        </p>
-      )}
     </form>
   );
 }
