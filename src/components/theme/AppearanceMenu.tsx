@@ -3,22 +3,15 @@
 import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Icons } from "@/components/ui/Icon";
-import {
-  useAppearance,
-  type BackgroundEffect,
-  type ThemePref,
-} from "./ThemeProvider";
+import { useAppearance, type ThemePref } from "./ThemeProvider";
 
 /**
- * Topbar trigger + popover for appearance prefs.
+ * Topbar trigger + popover for the app-shell theme.
  *
- *  Theme switch (Light / Dark / System) — segmented
- *  Background picker — None / PixelBlast / Soft Aurora / Iridescence
- *  Glass cards — toggle
- *  Brand color — color input
- *
- * All four changes apply instantly via `ThemeProvider`. Persistence is
- * localStorage — see provider doc-block.
+ * After the appearance rework this only controls light / dark / system for
+ * pages that don't carry their own theme. Per-dashboard theme and per-slide
+ * flair (background / glass / brand) are set on the dashboard and in the
+ * slideshow editor respectively.
  */
 export function AppearanceMenu() {
   const { appearance, setAppearance } = useAppearance();
@@ -42,7 +35,7 @@ export function AppearanceMenu() {
           align="end"
           sideOffset={8}
           style={{
-            width: 320,
+            width: 280,
             background: "var(--bg)",
             border: "1px solid var(--border)",
             borderRadius: 14,
@@ -55,7 +48,6 @@ export function AppearanceMenu() {
             Appearance
           </div>
 
-          {/* Theme */}
           <SectionLabel>Theme</SectionLabel>
           <Segmented<ThemePref>
             value={appearance.theme}
@@ -66,117 +58,13 @@ export function AppearanceMenu() {
             ]}
             onChange={(theme) => setAppearance({ theme })}
           />
-
-          {/* Background */}
-          <SectionLabel style={{ marginTop: 16 }}>Background effect</SectionLabel>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 6,
-            }}
-          >
-            <BgOption
-              active={appearance.background === null}
-              onClick={() => setAppearance({ background: null })}
-              label="None"
-              preview="var(--bg)"
-            />
-            <BgOption
-              active={appearance.background === "pixelBlast"}
-              onClick={() =>
-                setAppearance({ background: "pixelBlast" as BackgroundEffect })
-              }
-              label="Pixel Blast"
-              preview={`radial-gradient(circle at 30% 30%, ${appearance.brandColor}55, transparent 40%), radial-gradient(circle at 70% 70%, ${appearance.brandColor}88, #000 70%)`}
-            />
-            <BgOption
-              active={appearance.background === "softAurora"}
-              onClick={() =>
-                setAppearance({ background: "softAurora" as BackgroundEffect })
-              }
-              label="Soft Aurora"
-              preview={`linear-gradient(120deg, ${appearance.brandColor}, #f7f7f7 70%)`}
-            />
-            <BgOption
-              active={appearance.background === "iridescence"}
-              onClick={() =>
-                setAppearance({ background: "iridescence" as BackgroundEffect })
-              }
-              label="Iridescence"
-              preview={`conic-gradient(from 90deg at 50% 50%, #ff00ff, ${appearance.brandColor}, #00ffff, ${appearance.brandColor}, #ff00ff)`}
-            />
-          </div>
-
-          {/* Glass cards */}
-          <div
-            style={{
-              marginTop: 16,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
-              Glass cards
-            </span>
-            <Switch
-              checked={appearance.glassCards}
-              onChange={(v) => setAppearance({ glassCards: v })}
-            />
-          </div>
           <p
             className="t-small"
-            style={{
-              marginTop: 4,
-              color: "var(--text-muted)",
-              fontSize: 11,
-            }}
+            style={{ marginTop: 10, color: "var(--text-muted)", fontSize: 11 }}
           >
-            Translucent widget surfaces with backdrop blur. Pair with a
-            background effect for the strongest visual.
+            Applies to the app shell. Each dashboard carries its own light/dark,
+            and slide backgrounds are set in the slideshow editor.
           </p>
-
-          {/* Brand color */}
-          <SectionLabel style={{ marginTop: 16 }}>Brand color</SectionLabel>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              type="color"
-              value={appearance.brandColor}
-              onChange={(e) => setAppearance({ brandColor: e.target.value })}
-              style={{
-                width: 36,
-                height: 36,
-                padding: 0,
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                background: "transparent",
-                cursor: "pointer",
-              }}
-            />
-            <input
-              type="text"
-              value={appearance.brandColor}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (/^#?[0-9a-fA-F]{6}$/.test(v)) {
-                  setAppearance({
-                    brandColor: v.startsWith("#") ? v : `#${v}`,
-                  });
-                }
-              }}
-              style={{
-                flex: 1,
-                padding: "8px 10px",
-                background: "var(--bg-elev-2)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                fontSize: 13,
-                color: "var(--text-primary)",
-                fontFamily: "var(--font-mono)",
-              }}
-            />
-          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -253,94 +141,5 @@ function Segmented<T extends string>({
         );
       })}
     </div>
-  );
-}
-
-function BgOption({
-  active,
-  onClick,
-  label,
-  preview,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  preview: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        padding: 6,
-        background: "var(--bg-elev-2)",
-        border: `2px solid ${active ? "var(--primary)" : "var(--border)"}`,
-        borderRadius: 10,
-        cursor: "pointer",
-        textAlign: "left",
-      }}
-    >
-      <div
-        style={{
-          height: 38,
-          borderRadius: 6,
-          background: preview,
-          border: "1px solid var(--border)",
-        }}
-      />
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: active ? 500 : 400,
-          color: active ? "var(--text-primary)" : "var(--text-secondary)",
-        }}
-      >
-        {label}
-      </span>
-    </button>
-  );
-}
-
-function Switch({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      style={{
-        width: 36,
-        height: 20,
-        background: checked ? "var(--primary)" : "var(--bg-elev-3, var(--border))",
-        borderRadius: 999,
-        position: "relative",
-        border: "none",
-        cursor: "pointer",
-        transition: "background 140ms",
-        padding: 2,
-      }}
-    >
-      <span
-        style={{
-          display: "block",
-          width: 16,
-          height: 16,
-          borderRadius: "50%",
-          background: "#fff",
-          transform: `translateX(${checked ? 16 : 0}px)`,
-          transition: "transform 140ms ease-out",
-          boxShadow: "0 1px 2px rgba(0,0,0,.2)",
-        }}
-      />
-    </button>
   );
 }

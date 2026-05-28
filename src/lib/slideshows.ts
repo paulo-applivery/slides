@@ -14,6 +14,18 @@ import { db } from "@/lib/db";
 import { slideshows, type Slide, type SlideTransition } from "@/lib/db/schema";
 import { canEdit, type Role } from "@/lib/roles";
 import { parseYoutubeId, validateExternalUrl } from "@/lib/tv/slides";
+import {
+  DEFAULT_SLIDE_APPEARANCE,
+  type BackgroundEffect,
+  type SlideAppearance,
+} from "@/lib/appearance";
+
+const BACKGROUND_EFFECTS: BackgroundEffect[] = [
+  null,
+  "pixelBlast",
+  "softAurora",
+  "iridescence",
+];
 
 class ForbiddenError extends Error {
   constructor() {
@@ -312,5 +324,39 @@ export async function updateSlide(
           }
         : s,
     ),
+  );
+}
+
+/**
+ * Patch a slide's per-slide visual flair (background effect / glass cards /
+ * brand color). Merges onto the slide's existing appearance, falling back
+ * to DEFAULT_SLIDE_APPEARANCE for slides that predate the field. Applied
+ * only during TV playback.
+ */
+export async function updateSlideAppearance(
+  slideshowId: string,
+  slideId: string,
+  patch: Partial<SlideAppearance>,
+): Promise<void> {
+  const { workspaceId } = await requireEditor();
+  await mutateSlides(slideshowId, workspaceId, (current) =>
+    current.map((s) => {
+      if (s.id !== slideId) return s;
+      const base = s.appearance ?? DEFAULT_SLIDE_APPEARANCE;
+      const next: SlideAppearance = { ...base };
+      if (patch.background !== undefined) {
+        next.background = BACKGROUND_EFFECTS.includes(patch.background)
+          ? patch.background
+          : null;
+      }
+      if (patch.glassCards !== undefined) {
+        next.glassCards = !!patch.glassCards;
+      }
+      if (patch.brandColor !== undefined) {
+        const v = patch.brandColor.trim();
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) next.brandColor = v;
+      }
+      return { ...s, appearance: next };
+    }),
   );
 }

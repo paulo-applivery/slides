@@ -11,38 +11,24 @@ import {
 } from "react";
 
 /**
- * App-level appearance prefs.
+ * App-shell theme preference.
  *
- * All four pieces are owned by a single client provider so the toggles
- * in the topbar settings menu can flip them in lockstep:
+ * After the appearance rework this provider owns only light/dark/system
+ * for the app shell (lists, settings, the dashboards index — pages that
+ * don't carry their own theme). Per-dashboard theme overrides it while a
+ * dashboard is on screen (see `DashboardThemeControl`), and per-slide
+ * flair (background / glass / brand) lives on the slide for TV playback.
  *
- *   - theme  → light | dark | system
- *   - background → null | pixelBlast | softAurora | iridescence
- *   - glassCards → bool (translucent widget surfaces + backdrop blur)
- *   - brandColor → hex; the seeded brand stays the default, but the
- *                  operator can override and the WebGL backgrounds
- *                  pick it up via the color prop.
- *
- * Persistence: `localStorage` keyed per-browser. Not per-workspace yet
- * because the TV needs the choice to follow the dashboard, and we
- * already pair via cookies — that's a follow-up if the user wants
- * shared workspace prefs.
+ * Persistence: `localStorage`, per-browser.
  */
 export type ThemePref = "light" | "dark" | "system";
-export type BackgroundEffect = null | "pixelBlast" | "softAurora" | "iridescence";
 
 export type Appearance = {
   theme: ThemePref;
-  background: BackgroundEffect;
-  glassCards: boolean;
-  brandColor: string;
 };
 
 export const DEFAULT_APPEARANCE: Appearance = {
   theme: "system",
-  background: null,
-  glassCards: false,
-  brandColor: "#5C8BFF",
 };
 
 type Ctx = {
@@ -106,26 +92,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         : "light"
       : appearance.theme;
 
-  // Reflect resolved theme + brand color onto <html> so design-system
-  // CSS variables (in tokens.css) pick them up everywhere. The brand
-  // color override is exposed as both `--brand` and `--primary` since
-  // some chart components key off one and not the other.
+  // Reflect the resolved shell theme onto <html> so design-system CSS
+  // variables (in tokens.css) pick it up across pages without their own
+  // theme. Dashboard pages and TV mode set data-theme themselves and raise
+  // `data-theme-locked` while mounted; we must not clobber them. On a full
+  // page load this provider's effect fires *after* the deeper page effect
+  // (React runs child effects first), so without the lock check the shell
+  // theme would overwrite a dark dashboard back to light.
   useEffect(() => {
     const html = document.documentElement;
+    if (html.hasAttribute("data-theme-locked")) return;
     html.setAttribute("data-theme", resolved);
-    if (appearance.brandColor !== DEFAULT_APPEARANCE.brandColor) {
-      html.style.setProperty("--brand", appearance.brandColor);
-      html.style.setProperty("--primary", appearance.brandColor);
-    } else {
-      html.style.removeProperty("--brand");
-      html.style.removeProperty("--primary");
-    }
-    if (appearance.glassCards) {
-      html.setAttribute("data-glass", "on");
-    } else {
-      html.removeAttribute("data-glass");
-    }
-  }, [resolved, appearance.brandColor, appearance.glassCards]);
+  }, [resolved]);
 
   const value = useMemo(
     () => ({ appearance, setAppearance, resolved }),

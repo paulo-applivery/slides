@@ -10,9 +10,14 @@ import {
   moveSlide,
   removeSlide,
   updateSlide,
+  updateSlideAppearance,
   updateSlideUrl,
 } from "@/lib/slideshows";
 import type { Slide, SlideTransition } from "@/lib/db/schema";
+import {
+  DEFAULT_SLIDE_APPEARANCE,
+  type BackgroundEffect,
+} from "@/lib/appearance";
 
 /**
  * Two-pane editor.
@@ -266,6 +271,11 @@ export function SlideshowEditor({
                     </div>
                   </div>
                 </div>
+                <SlideAppearanceControls
+                  key={selected.id}
+                  slideshowId={slideshowId}
+                  slide={selected}
+                />
                 <div className="ss-config-meta">
                   <span className="t-small">
                     <Icons.Wifi size={13} /> Auto-loops indefinitely
@@ -314,6 +324,112 @@ export function SlideshowEditor({
         slideshowId={slideshowId}
         dashboards={dashboards}
       />
+    </div>
+  );
+}
+
+const BG_OPTIONS: Array<{ value: BackgroundEffect; label: string }> = [
+  { value: null, label: "None" },
+  { value: "pixelBlast", label: "Pixel Blast" },
+  { value: "softAurora", label: "Soft Aurora" },
+  { value: "iridescence", label: "Iridescence" },
+];
+
+/**
+ * Per-slide visual flair — background effect, glass cards, brand color.
+ * Each control commits through `updateSlideAppearance`. These apply only
+ * during TV playback (the editor preview is a static placeholder). The
+ * parent re-keys this on slide change so the brand-color text input resets.
+ */
+function SlideAppearanceControls({
+  slideshowId,
+  slide,
+}: {
+  slideshowId: string;
+  slide: Slide;
+}) {
+  const appearance = slide.appearance ?? DEFAULT_SLIDE_APPEARANCE;
+  const [brand, setBrand] = useState(appearance.brandColor);
+  const [pending, startTransition] = useTransition();
+
+  function commit(patch: Parameters<typeof updateSlideAppearance>[2]) {
+    startTransition(async () => {
+      await updateSlideAppearance(slideshowId, slide.id, patch);
+    });
+  }
+
+  return (
+    <div className="ss-config-grid" style={{ marginTop: 12 }}>
+      <div className="ss-config-row">
+        <label className="ss-config-label">Background effect</label>
+        <div className="ss-segmented">
+          {BG_OPTIONS.map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              className={`ss-seg ${appearance.background === o.value ? "active" : ""}`}
+              disabled={pending}
+              onClick={() => commit({ background: o.value })}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="ss-config-row">
+        <label className="ss-config-label">Glass cards</label>
+        <div className="ss-segmented">
+          {[
+            { v: false, label: "Off" },
+            { v: true, label: "On" },
+          ].map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              className={`ss-seg ${appearance.glassCards === o.v ? "active" : ""}`}
+              disabled={pending}
+              onClick={() => commit({ glassCards: o.v })}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="ss-config-row">
+        <label className="ss-config-label">Brand color</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <input
+            type="color"
+            value={brand}
+            disabled={pending}
+            onChange={(e) => {
+              setBrand(e.target.value);
+              commit({ brandColor: e.target.value });
+            }}
+            style={{
+              width: 36,
+              height: 36,
+              padding: 0,
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              background: "transparent",
+              cursor: "pointer",
+            }}
+          />
+          <input
+            className="ss-input ss-input-mono"
+            value={brand}
+            disabled={pending}
+            onChange={(e) => setBrand(e.target.value)}
+            onBlur={() => {
+              if (/^#[0-9a-fA-F]{6}$/.test(brand)) commit({ brandColor: brand });
+            }}
+            spellCheck={false}
+          />
+        </div>
+      </div>
     </div>
   );
 }

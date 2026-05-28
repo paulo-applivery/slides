@@ -21,8 +21,10 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
+import type { SlideAppearance } from "@/lib/appearance";
 
 const ROLES = ["admin", "editor", "viewer"] as const;
+const DASHBOARD_THEMES = ["light", "dark"] as const;
 const JOIN_POLICIES = ["domain-auto", "invite-only"] as const;
 const INTEGRATION_PROVIDERS = ["stripe", "hubspot"] as const;
 const INTEGRATION_STATUSES = ["active", "error", "disconnected"] as const;
@@ -149,6 +151,12 @@ export const dashboards = sqliteTable("dashboards", {
     .$type<DashboardLayout>()
     .notNull()
     .$default(() => ({ widgets: [] })),
+  /**
+   * Light/dark mode for this dashboard. Applied to the canvas in-app and
+   * when the dashboard is shown as a TV slide. Defaults to `dark` — TV
+   * mode's historical canonical surface.
+   */
+  theme: text("theme", { enum: DASHBOARD_THEMES }).notNull().default("dark"),
   /** Soft archive flag; we never hard-delete dashboards. */
   archived: integer("archived", { mode: "boolean" }).notNull().default(false),
   createdBy: text("created_by").references(() => users.id, {
@@ -302,6 +310,9 @@ export type Slide =
       dashboardId: string;
       durationSec: number;
       transition: SlideTransition;
+      /** Per-slide visual flair (background/glass/brand). Optional — older
+       *  rows predate it; renderers fall back to DEFAULT_SLIDE_APPEARANCE. */
+      appearance?: SlideAppearance;
     }
   | {
       id: string;
@@ -309,6 +320,7 @@ export type Slide =
       url: string;
       durationSec: number;
       transition: SlideTransition;
+      appearance?: SlideAppearance;
     }
   | {
       id: string;
@@ -316,6 +328,7 @@ export type Slide =
       url: string;
       durationSec: number;
       transition: SlideTransition;
+      appearance?: SlideAppearance;
     };
 
 // ─────────────────────────────────────────────────────────────────────────────

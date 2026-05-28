@@ -1,12 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useAppearance } from "./ThemeProvider";
+import type { BackgroundEffect } from "@/lib/appearance";
 
 /**
  * Lazy-load the WebGL backgrounds so they don't ship in the main bundle
- * for users who keep `background: null`. Each one pulls in either three.js
- * or ogl + shaders — heavy enough to want the code-split.
+ * for slides that keep `background: null`. Each one pulls in either
+ * three.js or ogl + shaders — heavy enough to want the code-split.
  *
  * `ssr: false` because the components use `window` / `document` /
  * WebGLRenderingContext on mount.
@@ -25,49 +25,49 @@ const Iridescence = dynamic(() => import("@/components/Iridescence"), {
 });
 
 /**
- * Mounts the chosen background as a fixed full-bleed layer behind the
- * app. Brand color is forwarded so the effect blends with the app's
- * accent. Returns `null` when no effect is picked — the default app
- * surface (token-driven solid color) shows through.
+ * Mounts a background effect as a fixed full-bleed layer behind the slide
+ * content. Driven by props (not the app appearance context) because
+ * background flair is now a per-slide TV concern — see `SlideAppearance`.
+ * Returns `null` when no effect is picked.
  */
-export function AppBackground() {
-  const { appearance } = useAppearance();
-  if (!appearance.background) return null;
+export function SlideBackground({
+  effect,
+  brandColor,
+}: {
+  effect: BackgroundEffect;
+  brandColor: string;
+}) {
+  if (!effect) return null;
 
   const containerStyle: React.CSSProperties = {
     position: "fixed",
     inset: 0,
     zIndex: 0,
     pointerEvents: "none",
-    // We render the chrome (sidebar / topbar / cards) above this layer
-    // via a higher z-index on `.app` — see app.css.
   };
 
   // Each effect takes its color a little differently:
   //   PixelBlast → string hex
-  //   SoftAurora → color1 / color2 hex pair (we feed the same brand twice
-  //                 with a subtle hue shift handled by the shader)
+  //   SoftAurora → color1 / color2 hex pair (same brand twice, shader
+  //                applies a subtle hue shift)
   //   Iridescence → [r, g, b] floats 0-1
-  switch (appearance.background) {
+  switch (effect) {
     case "pixelBlast":
       return (
         <div style={containerStyle}>
-          <PixelBlast color={appearance.brandColor} />
+          <PixelBlast color={brandColor} />
         </div>
       );
     case "softAurora":
       return (
         <div style={containerStyle}>
-          <SoftAurora
-            color1={appearance.brandColor}
-            color2={lighten(appearance.brandColor, 0.25)}
-          />
+          <SoftAurora color1={brandColor} color2={lighten(brandColor, 0.25)} />
         </div>
       );
     case "iridescence":
       return (
         <div style={containerStyle}>
-          <Iridescence color={hexToRgbFloat(appearance.brandColor)} />
+          <Iridescence color={hexToRgbFloat(brandColor)} />
         </div>
       );
   }

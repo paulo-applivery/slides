@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { workspaces } from "@/lib/db/schema";
 import { UserMenu } from "./UserMenu";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { AppearanceMenu } from "@/components/theme/AppearanceMenu";
 
 /**
@@ -30,13 +31,30 @@ async function getWorkspaceName(workspaceId: string | null | undefined) {
 
 export async function TopBar({ crumbs, name, actions }: TopBarProps) {
   const session = await auth();
-  const workspaceName = await getWorkspaceName(session?.user?.workspaceId ?? null);
+  const workspaceId = session?.user?.workspaceId ?? null;
+  const workspaceName = await getWorkspaceName(workspaceId);
   const initials = initialsFromName(session?.user?.name ?? session?.user?.email);
+
+  // Admins can switch the active workspace; everyone else is pinned to theirs.
+  const isAdmin = session?.user?.role === "admin";
+  const allWorkspaces = isAdmin
+    ? await db.query.workspaces.findMany({
+        columns: { id: true, name: true },
+        orderBy: (w, { asc }) => asc(w.name),
+      })
+    : [];
 
   return (
     <header className="tb">
       <div className="tb-title">
-        <span className="tb-crumb">{workspaceName}</span>
+        {isAdmin && workspaceId && allWorkspaces.length > 1 ? (
+          <WorkspaceSwitcher
+            current={{ id: workspaceId, name: workspaceName }}
+            workspaces={allWorkspaces}
+          />
+        ) : (
+          <span className="tb-crumb">{workspaceName}</span>
+        )}
         {crumbs.map((c) => (
           <span key={c} style={{ display: "contents" }}>
             <span className="tb-crumb-sep">/</span>

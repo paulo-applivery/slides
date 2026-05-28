@@ -82,6 +82,8 @@ export type TvDashboard = {
   id: string;
   name: string;
   layout: DashboardLayout | null;
+  /** The dashboard's stored light/dark — applied while this slide plays. */
+  theme: "light" | "dark";
   widgetResults: Record<string, TvWidgetResult>;
 };
 
@@ -123,6 +125,7 @@ export async function fetchTvSlideshowData(
           id: dashboards.id,
           name: dashboards.name,
           layout: dashboards.layout,
+          theme: dashboards.theme,
         })
         .from(dashboards)
         .where(
@@ -316,6 +319,7 @@ export async function fetchTvSlideshowData(
       id: d.id,
       name: d.name,
       layout: d.layout,
+      theme: d.theme,
       widgetResults: {},
     };
   }

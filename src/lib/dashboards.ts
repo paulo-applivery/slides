@@ -15,6 +15,7 @@ import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { dashboards } from "@/lib/db/schema";
 import { canEdit, type Role } from "@/lib/roles";
+import type { DashboardTheme } from "@/lib/appearance";
 
 class ForbiddenError extends Error {
   constructor() {
@@ -110,6 +111,19 @@ export async function renameDashboard(id: string, name: string): Promise<void> {
   revalidatePath(`/dashboards/${id}`);
 }
 
+/** Set a dashboard's light/dark theme. Applied in-app and on TV. */
+export async function setDashboardTheme(
+  id: string,
+  theme: DashboardTheme,
+): Promise<void> {
+  const { workspaceId } = await requireEditor();
+  await db
+    .update(dashboards)
+    .set({ theme, updatedAt: new Date() })
+    .where(and(eq(dashboards.id, id), eq(dashboards.workspaceId, workspaceId)));
+  revalidatePath(`/dashboards/${id}`);
+}
+
 /**
  * Duplicate a dashboard — copies name (suffixed " (copy)") + the full
  * widget layout verbatim. Widget ids only need to be unique within a
@@ -133,6 +147,7 @@ export async function duplicateDashboard(
       name: `${src.name} (copy)`.slice(0, 120),
       createdBy: userId,
       layout: src.layout ?? { widgets: [] },
+      theme: src.theme,
     });
     revalidatePath("/dashboards");
     return { ok: true, id: newId };

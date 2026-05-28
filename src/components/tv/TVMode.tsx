@@ -6,6 +6,8 @@ import { Icons } from "@/components/ui/Icon";
 import { parseYoutubeId, youtubeEmbedUrl } from "@/lib/tv/slides";
 import type { DashboardLayout, Slide } from "@/lib/db/schema";
 import type { TvWidgetResult } from "@/app/api/tv/data/route";
+import { DEFAULT_SLIDE_APPEARANCE, DEFAULT_BRAND_COLOR } from "@/lib/appearance";
+import { SlideBackground } from "@/components/theme/SlideBackground";
 import { TVDashboardSlide } from "./TVDashboardSlide";
 
 /**
@@ -26,6 +28,8 @@ type TvDashboard = {
   id: string;
   name: string;
   layout: DashboardLayout | null;
+  /** The dashboard's stored light/dark — applied while its slide plays. */
+  theme?: "light" | "dark";
   /** Present only when the API ran widget queries (Phase 4 slice 5+). */
   widgetResults?: Record<string, TvWidgetResult>;
 };
@@ -49,19 +53,49 @@ export function TVMode({
   const slides = slideshow.slides;
   const current = slides[idx];
 
-  // Force dark theme on mount; restore on unmount so we don't bleed the
-  // dark adaptation into the rest of the app.
+  // Resolve the active slide's effective appearance:
+  //   - theme follows the bound dashboard (dashboard slides); media slides
+  //     (youtube / url) fall back to dark.
+  //   - background / glass / brand come from the slide's own flair.
+  const activeAppearance = current?.appearance ?? DEFAULT_SLIDE_APPEARANCE;
+  const activeTheme: "light" | "dark" =
+    current?.type === "dashboard"
+      ? (dashboardsById[current.dashboardId]?.theme ?? "dark")
+      : "dark";
+
+  // Lock scroll for the whole TV mount; capture + restore the document
+  // theme so we don't bleed the slideshow's appearance into the app shell
+  // when the editor navigates back. The per-slide effect below mutates
+  // data-theme / data-glass / --brand as slides advance; this cleanup
+  // unwinds all of it on unmount.
   useEffect(() => {
     const html = document.documentElement;
-    const prev = html.getAttribute("data-theme");
-    html.setAttribute("data-theme", "dark");
+    const prevTheme = html.getAttribute("data-theme");
     document.body.style.overflow = "hidden";
     return () => {
-      if (prev) html.setAttribute("data-theme", prev);
+      if (prevTheme) html.setAttribute("data-theme", prevTheme);
       else html.removeAttribute("data-theme");
+      html.removeAttribute("data-glass");
+      html.style.removeProperty("--brand");
+      html.style.removeProperty("--primary");
       document.body.style.overflow = "";
     };
   }, []);
+
+  // Apply the active slide's theme + flair to <html> as slides advance.
+  useEffect(() => {
+    const html = document.documentElement;
+    html.setAttribute("data-theme", activeTheme);
+    if (activeAppearance.glassCards) html.setAttribute("data-glass", "on");
+    else html.removeAttribute("data-glass");
+    if (activeAppearance.brandColor !== DEFAULT_BRAND_COLOR) {
+      html.style.setProperty("--brand", activeAppearance.brandColor);
+      html.style.setProperty("--primary", activeAppearance.brandColor);
+    } else {
+      html.style.removeProperty("--brand");
+      html.style.removeProperty("--primary");
+    }
+  }, [activeTheme, activeAppearance.glassCards, activeAppearance.brandColor]);
 
   // Slide auto-advance.
   useEffect(() => {
@@ -136,6 +170,10 @@ export function TVMode({
   return (
     <div className="tv-root">
       <div className="tv-glow" />
+      <SlideBackground
+        effect={activeAppearance.background}
+        brandColor={activeAppearance.brandColor}
+      />
 
       <TVBeam
         key={`${current.id}-${idx}-${current.durationSec}`}

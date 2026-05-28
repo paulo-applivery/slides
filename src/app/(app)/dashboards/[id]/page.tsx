@@ -5,6 +5,7 @@ import { Dashboard } from "@/components/dashboard/Dashboard";
 import { EmptyCanvas } from "@/components/dashboard/EmptyCanvas";
 import { InlineRename } from "@/components/dashboard/InlineRename";
 import { AddWidgetButton } from "@/components/dashboard/AddWidgetButton";
+import { DashboardThemeControl } from "@/components/dashboard/DashboardThemeControl";
 import { Icons } from "@/components/ui/Icon";
 import { getDashboard } from "@/lib/dashboards";
 import { canEdit, type Role } from "@/lib/roles";
@@ -47,6 +48,11 @@ export default async function DashboardDetailPage({
         }
         actions={
           <>
+            <DashboardThemeControl
+              dashboardId={dashboard.id}
+              initialTheme={dashboard.theme}
+              editable={editable}
+            />
             <button className="btn btn-ghost">
               <Icons.Share size={14} /> Share
             </button>

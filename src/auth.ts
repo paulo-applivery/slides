@@ -16,7 +16,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { authConfig } from "@/auth.config";
 import { db } from "@/lib/db";
-import { accounts, sessions, users, verificationTokens } from "@/lib/db/schema";
+import { accounts, sessions, users, verificationTokens, workspaces } from "@/lib/db/schema";
 import { attachUserToWorkspace } from "@/lib/workspace";
 import { devLoginEnabled, loginAsDevUser } from "@/lib/dev-login";
 
@@ -44,7 +44,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   }),
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
+      // Admin-only workspace switch: a client `update({ workspaceId })` call
+      // re-points the active workspace on the token (session-only override —
+      // the user's "home" `users.workspaceId` in the DB is left untouched).
+      // Guarded by role so non-admins can't escape their own workspace.
+      if (trigger === "update" && token.role === "admin") {
+        const targetId = (session as { workspaceId?: unknown } | undefined)
+          ?.workspaceId;
+        if (typeof targetId === "string") {
+          const ws = await db.query.workspaces.findFirst({
+            where: eq(workspaces.id, targetId),
+            columns: { id: true },
+          });
+          if (ws) token.workspaceId = ws.id;
+        }
+        return token;
+      }
+
       // First call (user just signed in): pull workspace + role onto the
       // token so we don't hit the DB on every request.
       if (user?.id) {
