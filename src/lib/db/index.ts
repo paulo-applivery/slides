@@ -81,6 +81,14 @@ export const db: AppDb = new Proxy({} as AppDb, {
       ? (value as (...args: unknown[]) => unknown).bind(real)
       : value;
   },
+  // The Auth.js Drizzle adapter detects the SQL dialect via drizzle-orm's
+  // `is()`, which checks `value instanceof BaseSQLiteDatabase` and walks
+  // `Object.getPrototypeOf(value)`. Without this trap the proxy reports its
+  // `{}` target's prototype, detection fails, and DrizzleAdapter throws
+  // "Unsupported database type (object)". Forward the real db's prototype.
+  getPrototypeOf() {
+    return Object.getPrototypeOf(resolveDb());
+  },
 });
 
 export { schema };
