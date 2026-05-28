@@ -9,6 +9,9 @@ import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 
 export const authConfig = {
+  // Auth.js only auto-trusts the Host header on Vercel; behind Cloudflare we
+  // must opt in explicitly or every auth route throws `UntrustedHost` (500).
+  trustHost: true,
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,

@@ -3,16 +3,15 @@
  *
  * Local dev / `pnpm dev`     → `better-sqlite3` against a file (default `./dev.db`).
  * Cloudflare deploy          → `drizzle-orm/d1` against the D1 binding declared
- *                              in `wrangler.toml`. The factory below detects
- *                              the binding via `globalThis.DB` and swaps
- *                              drivers — same Drizzle interface either way.
+ *                              in `wrangler.jsonc`. The factory below reads the
+ *                              binding off the OpenNext request-context global
+ *                              and swaps drivers — same Drizzle interface either way.
  *
  * The schema is SQLite-flavor, so both drivers run the same SQL.
  *
  * In dev the client is cached on `globalThis` so HMR reloads don't leak
  * file handles.
  */
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 
@@ -31,19 +30,20 @@ declare global {
 }
 
 function makeDb(): AppDb {
-  // Production on Cloudflare: the D1 binding lives on the request context's
-  // `env`, exposed by @opennextjs/cloudflare — NOT on globalThis. Calling
-  // getCloudflareContext() outside the Worker (local `next build`, tsx
-  // scripts) throws, so we catch and fall through to local SQLite.
-  try {
-    const env = getCloudflareContext().env as { DB?: unknown };
-    if (env?.DB) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { drizzle } = require("drizzle-orm/d1");
-      return drizzle(env.DB, { schema }) as unknown as AppDb;
-    }
-  } catch {
-    // Not running inside the Cloudflare Worker — use the local driver below.
+  // Production on Cloudflare: @opennextjs/cloudflare stores the per-request
+  // context (incl. `env`, which holds our D1 binding) on a well-known global
+  // symbol. We read that symbol directly instead of importing
+  // `getCloudflareContext` from @opennextjs/cloudflare — importing that
+  // ESM-only package into the server module graph breaks `next build`'s
+  // page-data collection. In plain Node (local dev, tsx scripts) the symbol
+  // is absent, so we fall through to local SQLite.
+  const ctx = (globalThis as Record<symbol, unknown>)[
+    Symbol.for("__cloudflare-context__")
+  ] as { env?: { DB?: unknown } } | undefined;
+  if (ctx?.env?.DB) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { drizzle } = require("drizzle-orm/d1");
+    return drizzle(ctx.env.DB, { schema }) as unknown as AppDb;
   }
 
   // Local Node dev / build.
