@@ -12,6 +12,7 @@
  * In dev the client is cached on `globalThis` so HMR reloads don't leak
  * file handles.
  */
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "./schema";
 
@@ -27,21 +28,22 @@ type AppDb = BetterSQLite3Database<typeof schema>;
 declare global {
   // eslint-disable-next-line no-var
   var __slidesDb: AppDb | undefined;
-  // Cloudflare D1 binding declared in wrangler.toml. The runtime injects
-  // it on `globalThis` when deployed. Typed `unknown` because we don't
-  // pull in `@cloudflare/workers-types` in the Node bundle.
-  // eslint-disable-next-line no-var
-  var DB: unknown;
 }
 
 function makeDb(): AppDb {
-  // Production on Cloudflare: a D1 binding is injected as globalThis.DB.
-  if (typeof globalThis.DB !== "undefined") {
-    // dynamic import keeps this branch out of the Node bundle
-    // (and avoids dragging the SQLite native binary onto the edge runtime).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { drizzle } = require("drizzle-orm/d1");
-    return drizzle(globalThis.DB, { schema }) as unknown as AppDb;
+  // Production on Cloudflare: the D1 binding lives on the request context's
+  // `env`, exposed by @opennextjs/cloudflare — NOT on globalThis. Calling
+  // getCloudflareContext() outside the Worker (local `next build`, tsx
+  // scripts) throws, so we catch and fall through to local SQLite.
+  try {
+    const env = getCloudflareContext().env as { DB?: unknown };
+    if (env?.DB) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { drizzle } = require("drizzle-orm/d1");
+      return drizzle(env.DB, { schema }) as unknown as AppDb;
+    }
+  } catch {
+    // Not running inside the Cloudflare Worker — use the local driver below.
   }
 
   // Local Node dev / build.
@@ -56,8 +58,30 @@ function makeDb(): AppDb {
   return drizzle(sqlite, { schema });
 }
 
-export const db: AppDb = globalThis.__slidesDb ?? makeDb();
-if (process.env.NODE_ENV !== "production") globalThis.__slidesDb = db;
+let cached: AppDb | undefined = globalThis.__slidesDb;
+
+function resolveDb(): AppDb {
+  if (!cached) {
+    cached = makeDb();
+    if (process.env.NODE_ENV !== "production") globalThis.__slidesDb = cached;
+  }
+  return cached;
+}
+
+/**
+ * Lazy proxy. Resolving the D1 binding eagerly at module-eval time can run
+ * before any request context exists; deferring to first property access
+ * guarantees we're inside a request where getCloudflareContext() works.
+ */
+export const db: AppDb = new Proxy({} as AppDb, {
+  get(_target, prop, receiver) {
+    const real = resolveDb() as unknown as Record<string | symbol, unknown>;
+    const value = Reflect.get(real, prop, receiver);
+    return typeof value === "function"
+      ? (value as (...args: unknown[]) => unknown).bind(real)
+      : value;
+  },
+});
 
 export { schema };
 export type Db = typeof db;
