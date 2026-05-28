@@ -68,13 +68,21 @@ export default function LoginPage({
           }}
           aria-hidden
         >
-          <svg width="20" height="20" viewBox="0 0 70 70" fill="white">
-            <path d="M35 0 L70 60 L55 56 L35 22 L15 56 L0 60 Z" />
-            <path d="M35 36 L45 56 L35 53 L25 56 Z" />
+          <svg width="22" height="22" viewBox="72 73 144 143" fill="white">
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M144.012 73.0235L156.9 98.5442L156.888 98.5679L216 215.615L186.573 208.389L144 124.089L101.427 208.389L72 215.615L131.111 98.5679L131.1 98.5442L143.988 73.0235L144 73L144.012 73.0235Z"
+            />
+            <path
+              fillRule="evenodd"
+              clipRule="evenodd"
+              d="M144.04 153.275L164.099 192.855L143.978 188.022L123.858 192.855L144.034 153.275L144.037 153.269L144.04 153.275Z"
+            />
           </svg>
         </div>
         <h1 className="t-h2" style={{ marginBottom: 6 }}>
-          Your revenue. Live.
+          Your KPIs. Live.
         </h1>
         <p className="t-body" style={{ marginBottom: 24, color: "var(--text-tertiary)" }}>
           Sign in to Applivery Atlas with your work Google account.

@@ -48,10 +48,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // First call (user just signed in): pull workspace + role onto the
       // token so we don't hit the DB on every request.
       if (user?.id) {
-        const row = await db.query.users.findFirst({
+        let row = await db.query.users.findFirst({
           where: eq(users.id, user.id),
           columns: { workspaceId: true, role: true },
         });
+        // Self-heal: the `signIn` event is fire-and-forget — Auth.js swallows
+        // any error it throws — so a workspace attachment that failed on the
+        // very first login (e.g. tables not yet migrated) would leave the row
+        // with a null workspaceId forever, since `isNewUser` is false on every
+        // later login. Re-attach here (this call IS awaited) so the session
+        // always carries a workspaceId once one can be resolved.
+        if (!row?.workspaceId && user.email) {
+          await attachUserToWorkspace(user.id, user.email);
+          row = await db.query.users.findFirst({
+            where: eq(users.id, user.id),
+            columns: { workspaceId: true, role: true },
+          });
+        }
         token.userId = user.id;
         token.workspaceId = row?.workspaceId ?? null;
         token.role = row?.role ?? "viewer";
