@@ -6,8 +6,6 @@
  * simpler auth method; equivalent to Stripe's restricted keys). OAuth 2.0
  * for prod lands in a later slice once we configure the deploy URI.
  */
-import { Client as HubSpotClient } from "@hubspot/api-client";
-import type { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import {
@@ -18,8 +16,58 @@ import {
 } from "@/lib/db/schema";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 
-function client(accessToken: string): HubSpotClient {
-  return new HubSpotClient({ accessToken });
+// ─────────────────────────────────────────────────────────────────────────────
+// HubSpot REST client (direct fetch)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// We call HubSpot's public REST API directly instead of via
+// `@hubspot/api-client`. The official SDK bundles generated clients for every
+// HubSpot product (tens of MB) which pushed the Cloudflare Worker past its
+// size limit; we only need a handful of CRM endpoints.
+
+const HUBSPOT_API_BASE = "https://api.hubapi.com";
+
+/** Subset of HubSpot CRM Search filter operators we use. */
+type FilterOperator = "EQ" | "NEQ" | "LT" | "LTE" | "GT" | "GTE" | "BETWEEN";
+
+class HubspotApiError extends Error {
+  /** HTTP status, exposed as `code` so the shared 429 extractor keeps working. */
+  code: number;
+  headers: Record<string, string>;
+  body: string;
+  constructor(status: number, headers: Record<string, string>, body: string) {
+    super(`HubSpot API ${status}: ${body.slice(0, 500)}`);
+    this.name = "HubspotApiError";
+    this.code = status;
+    this.headers = headers;
+    this.body = body;
+  }
+}
+
+async function hsFetch<T>(
+  accessToken: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${HUBSPOT_API_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const headers: Record<string, string> = {};
+    res.headers.forEach((v, k) => {
+      headers[k] = v;
+    });
+    throw new HubspotApiError(res.status, headers, text);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,21 +167,22 @@ export async function validateHubspotToken(accessToken: string) {
       "HubSpot Private App tokens look like `pat-na1-…` or `pat-eu1-…`.",
     );
   }
-  const hs = client(accessToken);
-  // `getInfo` returns { portalId, timeZone, accountType, ... }
-  const info = await hs.settings.users.usersApi.getPage().catch(() => null);
-  // Fall back to a lightweight call — listing 1 deal — if the users endpoint
-  // isn't in scope. Token validity is confirmed either way.
-  if (!info) {
-    await hs.crm.deals.basicApi.getPage(1);
+  // Confirm the token works by hitting the users endpoint; fall back to a
+  // lightweight call — listing 1 deal — if that endpoint isn't in scope.
+  // Token validity is confirmed either way (an invalid token throws).
+  const usersOk = await hsFetch(accessToken, "GET", "/settings/v3/users?limit=1")
+    .then(() => true)
+    .catch(() => false);
+  if (!usersOk) {
+    await hsFetch(accessToken, "GET", "/crm/v3/objects/deals?limit=1");
   }
-  // Portal id isn't exposed by every endpoint in v13; we fetch it via the
-  // account-info endpoint on the integrations namespace.
-  const acct = await hs.apiRequest({
-    method: "GET",
-    path: "/integrations/v1/me",
-  });
-  const acctBody = (await acct.json()) as { portalId?: number };
+  // Portal id isn't exposed by every endpoint; fetch it via the account-info
+  // endpoint on the integrations namespace.
+  const acctBody = await hsFetch<{ portalId?: number }>(
+    accessToken,
+    "GET",
+    "/integrations/v1/me",
+  );
   return {
     hubspotPortalId: acctBody.portalId,
   };
@@ -266,7 +315,23 @@ export async function listHubspotProperties(
   const row = await getHubspotIntegration(workspaceId);
   if (!row) throw new Error("HubSpot is not connected for this workspace.");
   const token = await decryptSecret(row.accessTokenEnc);
-  const hs = client(token);
+
+  type RawProperty = {
+    name: string;
+    label: string;
+    type: string;
+    fieldType?: string;
+    hubspotDefined?: boolean;
+    options?: Array<{ label?: string; value?: string; hidden?: boolean }>;
+  };
+  type PropertiesResponse = { results: RawProperty[] };
+  type PipelinesResponse = {
+    results?: Array<{
+      id?: string;
+      label?: string;
+      stages?: Array<{ id?: string; label?: string }>;
+    }>;
+  };
 
   // Properties + Pipelines API are on the standard 100 req/10s tier —
   // well within our cost. Pipeline / dealstage are special: their enum
@@ -274,17 +339,19 @@ export async function listHubspotProperties(
   // API. We fetch deals pipelines in parallel with the properties calls
   // and enrich the property entries before returning.
   const [deals, contacts, pipelines] = await Promise.all([
-    hs.crm.properties.coreApi.getAll("deals"),
-    hs.crm.properties.coreApi.getAll("contacts"),
-    hs.crm.pipelines.pipelinesApi.getAll("deals").catch((err) => {
-      // Pipelines being unavailable shouldn't kill the whole discovery.
-      // Log and proceed with empty options for pipeline/dealstage.
-      console.warn(
-        "[hubspot] pipelines fetch failed:",
-        err instanceof Error ? err.message : err,
-      );
-      return null;
-    }),
+    hsFetch<PropertiesResponse>(token, "GET", "/crm/v3/properties/deals"),
+    hsFetch<PropertiesResponse>(token, "GET", "/crm/v3/properties/contacts"),
+    hsFetch<PipelinesResponse>(token, "GET", "/crm/v3/pipelines/deals").catch(
+      (err) => {
+        // Pipelines being unavailable shouldn't kill the whole discovery.
+        // Log and proceed with empty options for pipeline/dealstage.
+        console.warn(
+          "[hubspot] pipelines fetch failed:",
+          err instanceof Error ? err.message : err,
+        );
+        return null;
+      },
+    ),
   ]);
 
   const dealsWithEnrichment = deals.results.map((p) => {
@@ -629,7 +696,6 @@ export async function syncHubspot(
   if (!row) throw new Error("HubSpot is not connected for this workspace.");
 
   const token = await decryptSecret(row.accessTokenEnc);
-  const hs = client(token);
 
   // Full backfill: clear the mirror so we don't leave orphaned rows
   // (records deleted in HubSpot since the last partial sync). The
@@ -657,14 +723,14 @@ export async function syncHubspot(
     // could run in parallel, but the sequential cost is negligible and
     // keeping it ordered makes the log line `deals → contacts → owners`
     // easy to reason about.
-    const dealsCount = await syncDeals(hs, workspaceId, cursorMs, selection.deals);
+    const dealsCount = await syncDeals(token, workspaceId, cursorMs, selection.deals);
     const contactsCount = await syncContacts(
-      hs,
+      token,
       workspaceId,
       cursorMs,
       selection.contacts,
     );
-    const ownersCount = await syncOwners(hs, workspaceId);
+    const ownersCount = await syncOwners(token, workspaceId);
 
     const recordCount = dealsCount + contactsCount + ownersCount;
     await db
@@ -709,7 +775,7 @@ const HUBSPOT_SEARCH_MAX_BISECT_DEPTH = 24;
 
 /** Page through deals modified since `cursorMs`, upsert into the mirror. */
 async function syncDeals(
-  hs: HubSpotClient,
+  token: string,
   workspaceId: string,
   cursorMs: number,
   picked: HubspotPickedField[],
@@ -778,7 +844,13 @@ async function syncDeals(
     toMs: Date.now() + 24 * 60 * 60 * 1000,
     lastModField: "hs_lastmodifieddate",
     properties,
-    search: (params) => hs.crm.deals.searchApi.doSearch(params),
+    search: (params) =>
+      hsFetch<SearchResponse>(
+        token,
+        "POST",
+        "/crm/v3/objects/deals/search",
+        params,
+      ),
     upsertOne: upsertOne as (r: { id: string; properties: Record<string, string | null | undefined> }) => Promise<boolean>,
   });
 
@@ -797,7 +869,7 @@ async function syncDeals(
 }
 
 async function syncContacts(
-  hs: HubSpotClient,
+  token: string,
   workspaceId: string,
   cursorMs: number,
   picked: HubspotPickedField[],
@@ -846,7 +918,13 @@ async function syncContacts(
     toMs: Date.now() + 24 * 60 * 60 * 1000,
     lastModField: "lastmodifieddate",
     properties,
-    search: (params) => hs.crm.contacts.searchApi.doSearch(params),
+    search: (params) =>
+      hsFetch<SearchResponse>(
+        token,
+        "POST",
+        "/crm/v3/objects/contacts/search",
+        params,
+      ),
     upsertOne: upsertOne as (r: { id: string; properties: Record<string, string | null | undefined> }) => Promise<boolean>,
   });
 
@@ -879,7 +957,7 @@ type SearchResponse = {
 
 type SearchRequest = {
   filterGroups: Array<{
-    filters: Array<{ propertyName: string; operator: FilterOperatorEnum; value: string }>;
+    filters: Array<{ propertyName: string; operator: FilterOperator; value: string }>;
   }>;
   properties: string[];
   sorts: string[];
@@ -932,12 +1010,12 @@ async function searchWindowed(args: {
         filters: [
           {
             propertyName: lastModField,
-            operator: "GTE" as FilterOperatorEnum,
+            operator: "GTE",
             value: fromIso,
           },
           {
             propertyName: lastModField,
-            operator: "LT" as FilterOperatorEnum,
+            operator: "LT",
             value: toIso,
           },
         ],
@@ -1016,8 +1094,18 @@ function pickCustomValues(
  * Owners is a tiny set (sales team size), so we full-sync each run rather
  * than paginate cleverly.
  */
-async function syncOwners(hs: HubSpotClient, workspaceId: string) {
-  const res = await hs.crm.owners.ownersApi.getPage(undefined, undefined, 100);
+async function syncOwners(token: string, workspaceId: string) {
+  type Owner = {
+    id?: string;
+    email?: string;
+    firstName?: string;
+    lastName?: string;
+  };
+  const res = await hsFetch<{ results: Owner[] }>(
+    token,
+    "GET",
+    "/crm/v3/owners?limit=100",
+  );
   for (const o of res.results) {
     if (!o.id) continue;
     await db
