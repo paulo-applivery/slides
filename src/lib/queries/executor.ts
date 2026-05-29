@@ -550,14 +550,22 @@ async function runGroupBy(
     }
   }
 
+  // When a labelFrom mapping is configured, the group key is an opaque ID
+  // (e.g. a HubSpot owner id) that must never be surfaced as the display
+  // label — consumers fall back to `key` when `label` is missing.
+  const hasLabelMapping = !!opt?.labelFrom;
   return {
     kind: "groupby",
     rows: rows.map((r) => {
-      const key = typeof r.key === "string" ? r.key : String(r.key ?? "—");
+      const rawKey = r.key;
+      const key = typeof rawKey === "string" ? rawKey : String(rawKey ?? "—");
       const value = Number(r.v ?? 0);
+      const label = hasLabelMapping
+        ? (labelMap?.get(key) ?? (rawKey == null ? "Unassigned" : "Unknown"))
+        : labelMap?.get(key);
       return {
         key,
-        label: labelMap?.get(key),
+        label,
         value,
         formatted: formatScalar(metric, value, config.outputFormat),
       };
