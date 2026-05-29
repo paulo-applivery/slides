@@ -23,6 +23,10 @@ const PUBLIC_PREFIXES = [
   // validated by /api/tv/data on every page load. /pair is intentionally
   // NOT here because it needs a NextAuth session.
   "/tv/",
+  // Short TV URL — resolves a slideshow-id prefix and redirects to the
+  // full /tv/<uuid>. Public for the same reason /tv/ is: a bare TV
+  // browser types this in before it has any session.
+  "/t/",
   "/api/tv/pair/start",
   "/api/tv/pair/poll",
   "/api/tv/data",

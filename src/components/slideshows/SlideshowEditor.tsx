@@ -345,7 +345,7 @@ export function SlideshowEditor({
                   <span className="t-small">
                     TV URL ·{" "}
                     <code className="t-mono ss-url">
-                      app.applivery.com/tv/{slideshowId.slice(0, 8)}
+                      app.applivery.com/t/{slideshowId.slice(0, 8)}
                     </code>
                   </span>
                 </div>
