@@ -75,7 +75,12 @@ export type TvWidgetResult =
    */
   | {
       kind: "funnel-ok";
-      stages: Array<{ label: string; value: number; formatted?: string }>;
+      stages: Array<{
+        label: string;
+        value: number;
+        formatted?: string;
+        color?: string;
+      }>;
     };
 
 export type TvDashboard = {
@@ -190,6 +195,7 @@ export async function fetchTvSlideshowData(
                     queryId: string | null;
                     dateField?: string;
                     timePeriod?: TimePeriod;
+                    color?: string;
                   }>;
                 }
               | undefined
@@ -208,9 +214,9 @@ export async function fetchTvSlideshowData(
         const widgetTp = wDisplay?.timePeriod;
         const stageResults = await Promise.all(
           stages.map(async (s) => {
-            if (!s.queryId) return { label: s.label, value: 0 };
+            if (!s.queryId) return { label: s.label, value: 0, color: s.color };
             const q = queryById.get(s.queryId);
-            if (!q) return { label: s.label, value: 0 };
+            if (!q) return { label: s.label, value: 0, color: s.color };
             try {
               // Per-stage filter routing — a contacts stage gets
               // contact filters, a deals stage gets deal filters.
@@ -237,7 +243,7 @@ export async function fetchTvSlideshowData(
                 extraFilters: pickExtraFilters(wDisplay, stageObject),
               });
               if (res.kind !== "single") {
-                return { label: s.label, value: 0 };
+                return { label: s.label, value: 0, color: s.color };
               }
               const value =
                 res.formatter === "EUR-cents"
@@ -247,9 +253,10 @@ export async function fetchTvSlideshowData(
                 label: s.label,
                 value,
                 formatted: res.formatted ?? undefined,
+                color: s.color,
               };
             } catch {
-              return { label: s.label, value: 0 };
+              return { label: s.label, value: 0, color: s.color };
             }
           }),
         );

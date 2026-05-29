@@ -27,6 +27,7 @@ import type { WidgetChip } from "@/components/dashboard/widgetChip";
 type WidgetDisplay = {
   title?: string;
   titleSize?: number;
+  textScale?: number;
   titleAlign?: "left" | "center" | "right";
   chip?: WidgetChip;
 };
@@ -140,6 +141,7 @@ function TvWidget({
     <WidgetShell
       title={title}
       titleSize={display.titleSize}
+      textScale={display.textScale}
       titleAlign={display.titleAlign}
       chip={display.chip}
       dragHandle={false}
@@ -203,7 +205,9 @@ function renderBound(
     thresholds: [number, number];
   },
 ) {
-  const display = widget.display as { target?: number } | undefined;
+  const display = widget.display as
+    | { target?: number; textScale?: number }
+    | undefined;
   // Same color-pick logic the editor uses — falls back to null when
   // there's no target or no spec.
   const condColor =
@@ -237,7 +241,7 @@ function renderBound(
       }
     case "bar":
       if (res.kind !== "timeseries") return null;
-      return <BarChart data={adaptBar(res)} />;
+      return <BarChart data={adaptBar(res)} textScale={display?.textScale} />;
     case "ranking":
       if (res.kind !== "groupby") return null;
       // Ranking colors per-row against the dataset max — pass the
@@ -267,7 +271,12 @@ function renderSeedFallback(widget: DashboardLayout["widgets"][number]) {
     case "gauge":
       return <GaugeChart value={SEED.gauge.value} target={SEED.gauge.target} />;
     case "bar":
-      return <BarChart data={[...SEED.bars]} />;
+      return (
+        <BarChart
+          data={[...SEED.bars]}
+          textScale={(widget.display as { textScale?: number } | undefined)?.textScale}
+        />
+      );
     case "funnel":
       return <FunnelChart stages={[...SEED.funnel]} />;
     case "ranking":

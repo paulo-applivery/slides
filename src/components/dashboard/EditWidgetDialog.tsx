@@ -35,6 +35,11 @@ type StageRow = {
    * unset, it falls back to the saved query's dateRange.
    */
   timePeriod?: TimePeriod;
+  /**
+   * Optional per-stage color override (hex). When unset, the stage
+   * uses the brand gradient (primary → secondary across stages).
+   */
+  color?: string;
 };
 
 /**
@@ -101,6 +106,7 @@ export function EditWidgetDialog({
   widgetType,
   currentTitle,
   currentTitleSize,
+  currentTextScale,
   currentTitleAlign,
   currentChip,
   currentTimePeriod,
@@ -120,6 +126,8 @@ export function EditWidgetDialog({
   widgetType: string;
   currentTitle: string;
   currentTitleSize?: number;
+  /** Current chart text-size multiplier. Undefined = default (1×). */
+  currentTextScale?: number;
   /** Current title alignment. */
   currentTitleAlign?: "left" | "center" | "right";
   currentChip?: WidgetChip;
@@ -157,6 +165,8 @@ export function EditWidgetDialog({
   const [title, setTitle] = useState(currentTitle);
   const [autoSize, setAutoSize] = useState(currentTitleSize === undefined);
   const [size, setSize] = useState(currentTitleSize ?? 32);
+  // Chart text-size multiplier. 1 = the design default (no override).
+  const [textScale, setTextScale] = useState(currentTextScale ?? 1);
   const [align, setAlign] = useState<"left" | "center" | "right">(
     currentTitleAlign ?? "left",
   );
@@ -213,6 +223,7 @@ export function EditWidgetDialog({
     setTitle(currentTitle);
     setAutoSize(currentTitleSize === undefined);
     setSize(currentTitleSize ?? 32);
+    setTextScale(currentTextScale ?? 1);
     setAlign(currentTitleAlign ?? "left");
 
     setChipEnabled(!!currentChip);
@@ -238,6 +249,7 @@ export function EditWidgetDialog({
     open,
     currentTitle,
     currentTitleSize,
+    currentTextScale,
     currentTitleAlign,
     currentChip,
     currentTimePeriod,
@@ -254,6 +266,9 @@ export function EditWidgetDialog({
         await updateWidgetDisplay(dashboardId, widgetId, {
           title: title.trim(),
           titleSize: autoSize ? null : size,
+          // The server drops the key when the value is 1× — keeps the
+          // saved display blob minimal for the common case.
+          textScale,
           // Persist alignment only when it differs from the implicit default
           // ("left"). Sending `null` for left keeps the saved display blob
           // small for the common case.
@@ -398,6 +413,8 @@ export function EditWidgetDialog({
               setAutoSize={setAutoSize}
               size={size}
               setSize={setSize}
+              textScale={textScale}
+              setTextScale={setTextScale}
               align={align}
               setAlign={setAlign}
               chipEnabled={chipEnabled}
@@ -538,6 +555,19 @@ export function EditWidgetDialog({
 // Lifted out for readability; props mirror the parent's state setters.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Chart text-size presets. We expose discrete steps rather than a free
+ * slider because the underlying value is a *multiplier* on the chart's
+ * fluid `clamp()` sizing — operators think "a bit bigger", not "1.2×".
+ * `1` is the design default and persists as "no override".
+ */
+const TEXT_SCALE_PRESETS: ReadonlyArray<{ label: string; value: number }> = [
+  { label: "Small", value: 0.85 },
+  { label: "Default", value: 1 },
+  { label: "Large", value: 1.2 },
+  { label: "X-Large", value: 1.45 },
+];
+
 function DisplayTab(props: {
   title: string;
   setTitle: (v: string) => void;
@@ -545,6 +575,8 @@ function DisplayTab(props: {
   setAutoSize: (v: boolean) => void;
   size: number;
   setSize: (v: number) => void;
+  textScale: number;
+  setTextScale: (v: number) => void;
   align: "left" | "center" | "right";
   setAlign: (v: "left" | "center" | "right") => void;
   chipEnabled: boolean;
@@ -575,6 +607,8 @@ function DisplayTab(props: {
     setAutoSize,
     size,
     setSize,
+    textScale,
+    setTextScale,
     align,
     setAlign,
     chipEnabled,
@@ -678,6 +712,51 @@ function DisplayTab(props: {
           );
         })}
       </div>
+
+      <SectionLabel style={{ marginTop: 18 }}>Chart text size</SectionLabel>
+      <div
+        role="radiogroup"
+        style={{
+          display: "inline-flex",
+          background: "var(--bg-elev-2)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          padding: 2,
+          gap: 2,
+        }}
+      >
+        {TEXT_SCALE_PRESETS.map((preset) => {
+          const active = Math.abs(textScale - preset.value) < 0.001;
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setTextScale(preset.value)}
+              title={`${preset.label} (${preset.value}×)`}
+              style={{
+                padding: "8px 14px",
+                background: active ? "var(--bg)" : "transparent",
+                border: "1px solid",
+                borderColor: active ? "var(--border-strong)" : "transparent",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: active ? 500 : 400,
+                color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                cursor: "pointer",
+                minWidth: 64,
+              }}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="t-small" style={{ marginTop: 6, color: "var(--text-muted)" }}>
+        Scales the value labels, axis ticks, and legends inside the chart.
+        Text stays responsive to the widget size.
+      </p>
 
       <div
         style={{
@@ -1187,12 +1266,12 @@ function FunnelStagesTab({
               key={s.id}
               style={{
                 display: "grid",
-                // 7 columns now: badge / label / query / dateField /
-                // period / move / remove. The growable columns (label,
-                // query, dateField, period) share `4.2fr` so each gets
-                // roughly equal space on the 560px dialog.
+                // 8 columns now: badge / color / label / query /
+                // dateField / period / move / remove. The growable
+                // columns (label, query, dateField, period) share the
+                // remaining space on the 560px dialog.
                 gridTemplateColumns:
-                  "auto 1fr 1.2fr 1fr 1fr auto auto",
+                  "auto auto 1fr 1.2fr 1fr 1fr auto auto",
                 gap: 8,
                 alignItems: "center",
                 padding: 10,
@@ -1218,6 +1297,75 @@ function FunnelStagesTab({
               >
                 {idx + 1}
               </span>
+              {/* Per-stage color. The swatch shows the brand gradient
+                  while unset (auto) and the picked hex once chosen.
+                  The native color input is overlaid invisibly so the
+                  whole swatch is the click target; the "auto" link
+                  below clears back to the brand gradient. */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 2,
+                }}
+              >
+                <label
+                  title={
+                    s.color
+                      ? "Stage color — click to change"
+                      : "Stage color (auto: brand gradient) — click to set"
+                  }
+                  style={{
+                    position: "relative",
+                    width: 26,
+                    height: 26,
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background:
+                      s.color ??
+                      "linear-gradient(135deg, var(--primary), var(--secondary))",
+                    cursor: "pointer",
+                    display: "block",
+                    flexShrink: 0,
+                  }}
+                >
+                  <input
+                    type="color"
+                    value={s.color ?? "#0241E3"}
+                    onChange={(e) => updateAt(idx, { color: e.target.value })}
+                    aria-label={`Color for stage ${idx + 1}`}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      opacity: 0,
+                      border: "none",
+                      padding: 0,
+                      cursor: "pointer",
+                    }}
+                  />
+                </label>
+                {s.color && (
+                  <button
+                    type="button"
+                    onClick={() => updateAt(idx, { color: undefined })}
+                    title="Reset to brand color"
+                    style={{
+                      fontSize: 9,
+                      lineHeight: 1,
+                      color: "var(--text-muted)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    auto
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 value={s.label}

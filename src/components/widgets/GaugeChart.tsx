@@ -51,7 +51,7 @@ export function GaugeChart({
   // Resolve once so the arc + pill share the same hex. `null` (no
   // override) falls back to the design-system primary at render time.
   const accent = color ?? "var(--primary)";
-  const animated = useCountUp(value);
+  const animated = useCountUp(value, 900, true);
   const pct = target === 0 ? 0 : value / target;
   const animPct = Math.max(0, Math.min(1, target === 0 ? 0 : animated / target));
   const pctDisplay = Math.round(pct * 100);
@@ -121,7 +121,10 @@ export function GaugeChart({
           fill="var(--text-primary)"
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 76,
+            // `px` here is in viewBox user units; the var cascades from
+            // `.widget-body` so the operator's text-size choice scales
+            // the hero number along with the rest of the chart text.
+            fontSize: "calc(76px * var(--chart-text-scale, 1))",
             fontWeight: 600,
             letterSpacing: "-3px",
           }}
@@ -138,7 +141,7 @@ export function GaugeChart({
           fill="var(--text-tertiary)"
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 30,
+            fontSize: "calc(30px * var(--chart-text-scale, 1))",
             fontWeight: 500,
             letterSpacing: "-1px",
           }}
@@ -176,10 +179,15 @@ function Pill({
   // SVG `transform` attribute (not CSS) so coordinates are in viewBox units.
   // useCountUp drives the pill smoothly across frames via re-renders — no
   // CSS transition needed.
+  //
+  // White "tooltip" pill with dark text, ringed by a thin accent stroke
+  // that ties it to the arc tip. Keeping the body white (rather than the
+  // accent fill) makes the percentage read as a callout distinct from
+  // the coloured progress arc — legible regardless of the arc colour.
   return (
     <g
       transform={`translate(${x} ${y})`}
-      style={{ filter: "drop-shadow(0 4px 14px rgba(2, 65, 227, 0.45))" }}
+      style={{ filter: "drop-shadow(0 4px 12px rgba(0, 0, 0, 0.28))" }}
     >
       <rect
         x={-w / 2}
@@ -187,14 +195,16 @@ function Pill({
         width={w}
         height={h}
         rx={8}
-        fill={accent}
+        fill="#fff"
+        stroke={accent}
+        strokeWidth={1.5}
       />
       <text
         x={0}
         y={1}
         textAnchor="middle"
         dominantBaseline="central"
-        fill="#fff"
+        fill="#050B1F"
         style={{
           fontFamily: "var(--font-sans)",
           fontSize: 13,

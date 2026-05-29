@@ -43,6 +43,11 @@ type WidgetDisplay = {
   title?: string;
   /** Title font-size in px. When unset, scales fluidly with cell height. */
   titleSize?: number;
+  /**
+   * Multiplier for the chart's internal text (value labels, axis ticks,
+   * legends). `1` / unset = design default. See `WidgetShell.textScale`.
+   */
+  textScale?: number;
   /** Horizontal alignment of the title within the head. */
   titleAlign?: "left" | "center" | "right";
   /** Optional inline chip beside the title. */
@@ -79,6 +84,8 @@ type WidgetDisplay = {
     queryId: string | null;
     dateField?: string;
     timePeriod?: TimePeriod;
+    /** Per-stage color override (hex). Falls back to the brand gradient. */
+    color?: string;
   }>;
   /**
    * Widget-level filter overlay (LEGACY shape — applies to every
@@ -184,6 +191,7 @@ export async function WidgetTile({
     <WidgetShell
       title={resolvedTitle}
       titleSize={display.titleSize}
+      textScale={display.textScale}
       titleAlign={display.titleAlign}
       chip={display.chip}
       dragHandle={editable}
@@ -197,6 +205,7 @@ export async function WidgetTile({
             hasBinding={!!bound}
             currentTitle={display.title ?? resolvedTitle}
             currentTitleSize={display.titleSize}
+            currentTextScale={display.textScale}
             currentTitleAlign={display.titleAlign}
             currentChip={display.chip}
             currentTimePeriod={display.timePeriod}
@@ -343,7 +352,7 @@ function renderBound(
       }
     case "bar":
       if (res.kind !== "timeseries") return null;
-      return <BarChart data={adaptBar(res)} />;
+      return <BarChart data={adaptBar(res)} textScale={display.textScale} />;
     case "ranking":
       if (res.kind !== "groupby") return null;
       return (
@@ -392,7 +401,7 @@ function renderSeedFallback(widget: Widget, display: WidgetDisplay) {
         />
       );
     case "bar":
-      return <BarChart data={[...SEED.bars]} />;
+      return <BarChart data={[...SEED.bars]} textScale={display.textScale} />;
     case "funnel":
       return <FunnelChart stages={[...SEED.funnel]} />;
     case "ranking":
@@ -504,9 +513,9 @@ async function FunnelTile({
   // renders the operator's chosen shape.
   const runs = await Promise.all(
     stages.map(async (s) => {
-      if (!s.queryId) return { label: s.label, value: 0 };
+      if (!s.queryId) return { label: s.label, value: 0, color: s.color };
       const q = byId.get(s.queryId);
-      if (!q) return { label: s.label, value: 0 };
+      if (!q) return { label: s.label, value: 0, color: s.color };
       try {
         // Pick the right filter overlay for this stage's object —
         // contacts stages get `filtersByObject.contacts`, deals
@@ -538,16 +547,17 @@ async function FunnelTile({
           // Wrong query shape — render 0 rather than throwing so the
           // funnel can keep working while the operator fixes the
           // binding.
-          return { label: s.label, value: 0 };
+          return { label: s.label, value: 0, color: s.color };
         }
         const value = res.formatter === "EUR-cents" ? (res.value ?? 0) / 100 : (res.value ?? 0);
         return {
           label: s.label,
           value,
           formatted: res.formatted ?? undefined,
+          color: s.color,
         };
       } catch {
-        return { label: s.label, value: 0 };
+        return { label: s.label, value: 0, color: s.color };
       }
     }),
   );
@@ -589,6 +599,7 @@ async function FunnelTile({
     <WidgetShell
       title={resolvedTitle}
       titleSize={display.titleSize}
+      textScale={display.textScale}
       titleAlign={display.titleAlign}
       chip={display.chip}
       dragHandle={editable}
@@ -602,6 +613,7 @@ async function FunnelTile({
             hasBinding={stages.length > 0}
             currentTitle={display.title ?? resolvedTitle}
             currentTitleSize={display.titleSize}
+            currentTextScale={display.textScale}
             currentTitleAlign={display.titleAlign}
             currentChip={display.chip}
             currentTimePeriod={display.timePeriod}

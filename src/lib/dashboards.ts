@@ -333,6 +333,11 @@ export async function updateWidgetDisplay(
   patch: {
     title?: string | null;
     titleSize?: number | null;
+    /**
+     * Chart text-size multiplier (applied to value labels, axis ticks,
+     * legends). `null` reverts to the 1× default.
+     */
+    textScale?: number | null;
     /** "left" | "center" | "right". `null` reverts to the CSS default. */
     titleAlign?: "left" | "center" | "right" | null;
     chip?: {
@@ -365,6 +370,8 @@ export async function updateWidgetDisplay(
            * Persisted as the same shape the TimePeriodPicker emits.
            */
           timePeriod?: unknown;
+          /** Optional per-stage color override (hex). */
+          color?: string;
         }>
       | null;
     /**
@@ -465,6 +472,7 @@ export async function updateWidgetDisplay(
               queryId: string | null;
               dateField?: string;
               timePeriod?: unknown;
+              color?: string;
             } = {
               id: String(s.id || crypto.randomUUID()),
               label: String(s.label ?? "").trim().slice(0, 40) || "Stage",
@@ -493,6 +501,15 @@ export async function updateWidgetDisplay(
             ) {
               out.timePeriod = s.timePeriod;
             }
+            // Per-stage color — only persist a valid 3/6-digit hex.
+            // Anything else (empty, "auto") drops the key so the
+            // funnel falls back to the brand gradient.
+            if (
+              typeof s.color === "string" &&
+              /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s.color.trim())
+            ) {
+              out.color = s.color.trim();
+            }
             return out;
           });
         }
@@ -509,6 +526,24 @@ export async function updateWidgetDisplay(
           // big crashes into chart content. The cqh default sizes between
           // 20–64 px; we let operators override to anything 12–96 px.
           nextDisplay.titleSize = Math.max(12, Math.min(96, Math.round(patch.titleSize)));
+        }
+      }
+      if (patch.textScale !== undefined) {
+        // `null`, a non-finite value, or the 1× default all clear the
+        // key so the saved blob stays minimal and CSS falls back to
+        // `var(--chart-text-scale, 1)`. Otherwise clamp to a readable
+        // band — below ~0.5× text is illegible, above ~2× it crashes
+        // into chart geometry.
+        if (
+          patch.textScale === null ||
+          !Number.isFinite(patch.textScale) ||
+          patch.textScale === 1
+        ) {
+          delete nextDisplay.textScale;
+        } else {
+          const clamped = Math.max(0.5, Math.min(2, patch.textScale));
+          // Round to 2 decimals so presets persist cleanly (0.85, 1.2…).
+          nextDisplay.textScale = Math.round(clamped * 100) / 100;
         }
       }
       if (patch.titleAlign !== undefined) {

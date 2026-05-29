@@ -29,6 +29,15 @@ export type WidgetShellProps = {
   title: string;
   /** Title font-size in px. When unset, scales fluidly via cqh. */
   titleSize?: number;
+  /**
+   * Multiplier applied to the chart's internal text (value labels, axis
+   * ticks, legends, etc.) via the `--chart-text-scale` custom property
+   * on `.widget-body`. `1` (or unset) is the design default; the chart
+   * components multiply their fluid `clamp()` sizes by this. Bar-chart
+   * axis ticks read it as a prop instead (Recharts renders them as SVG
+   * attributes, which can't reference a CSS var).
+   */
+  textScale?: number;
   /** Horizontal alignment of the title text within its flex slot. */
   titleAlign?: "left" | "center" | "right";
   /** Optional inline chip beside the title. */
@@ -44,6 +53,7 @@ export type WidgetShellProps = {
 export function WidgetShell({
   title,
   titleSize,
+  textScale,
   titleAlign,
   chip,
   children,
@@ -54,6 +64,12 @@ export function WidgetShell({
     ...(titleSize ? { fontSize: titleSize } : {}),
     ...(titleAlign ? { textAlign: titleAlign } : {}),
   };
+  // Only set the var when it deviates from the default so the common
+  // case stays clean and CSS falls back to `var(--chart-text-scale, 1)`.
+  const bodyStyle: React.CSSProperties | undefined =
+    textScale && textScale !== 1
+      ? ({ "--chart-text-scale": textScale } as React.CSSProperties)
+      : undefined;
   return (
     <div className="widget">
       <header className="widget-head">
@@ -73,7 +89,7 @@ export function WidgetShell({
         </div>
         {action && <div className="widget-head-r">{action}</div>}
       </header>
-      <div className="widget-body">{children}</div>
+      <div className="widget-body" style={bodyStyle}>{children}</div>
     </div>
   );
 }

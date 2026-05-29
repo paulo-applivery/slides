@@ -280,12 +280,12 @@ body { min-width: 1280px; }
    aspectRatio = W/H would make it taller than the body. */
 .gauge { position: relative; padding-top: 0; max-height: 100%; max-width: 100%; align-self: center; }
 .gauge svg { display: block; max-height: 100%; }
-.gauge-tick { font-family: var(--font-mono); font-size: clamp(10px, 2cqh, 14px); fill: var(--text-muted); }
+.gauge-tick { font-family: var(--font-mono); font-size: calc(clamp(10px, 2cqh, 14px) * var(--chart-text-scale, 1)); fill: var(--text-muted); }
 
 /* ---------- BAR CHART ---------- */
 .bars-wrap { display: flex; flex-direction: column; gap: clamp(6px, 2cqh, 14px); height: 100%; }
-.chart-axis { fill: var(--text-muted); font-size: clamp(10px, 2cqh, 14px); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.chart-legend { display: flex; gap: 20px; font-size: clamp(11px, 2.4cqh, 15px); color: var(--text-muted); padding-left: 32px; }
+.chart-axis { fill: var(--text-muted); font-size: calc(clamp(10px, 2cqh, 14px) * var(--chart-text-scale, 1)); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.chart-legend { display: flex; gap: 20px; font-size: calc(clamp(11px, 2.4cqh, 15px) * var(--chart-text-scale, 1)); color: var(--text-muted); padding-left: 32px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 8px; }
 .lg-sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
 
@@ -296,7 +296,7 @@ body { min-width: 1280px; }
 .funnel { display: flex; flex-direction: column; height: 100%; min-height: 0; justify-content: center; }
 .funnel-row { display: grid; grid-template-columns: clamp(110px, 22cqw, 200px) 1fr; gap: clamp(10px, 1.8cqw, 18px); align-items: center; padding: clamp(2px, 0.6cqh, 8px) 0; }
 .funnel-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.funnel-name { color: var(--text-primary); font-size: clamp(12px, 2.6cqh, 18px); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.funnel-name { color: var(--text-primary); font-size: calc(clamp(12px, 2.6cqh, 18px) * var(--chart-text-scale, 1)); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .funnel-bar-wrap { background: var(--bg-elev-2); border-radius: var(--radius-md); height: clamp(22px, 7cqh, 56px); overflow: hidden; }
 .funnel-bar {
   height: 100%;
@@ -308,10 +308,10 @@ body { min-width: 1280px; }
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 :root[data-theme="light"] .funnel-bar { color: #fff; }
-.funnel-bar-value { font-size: clamp(12px, 2.8cqh, 20px); font-variant-numeric: tabular-nums; }
+.funnel-bar-value { font-size: calc(clamp(12px, 2.8cqh, 20px) * var(--chart-text-scale, 1)); font-variant-numeric: tabular-nums; }
 .funnel-arrow { display: grid; grid-template-columns: clamp(110px, 22cqw, 200px) 1fr; gap: clamp(10px, 1.8cqw, 18px); align-items: center; padding: clamp(2px, 0.4cqh, 4px) 0; }
 .funnel-arrow-line { height: clamp(8px, 2cqh, 18px); border-left: 1.5px dashed var(--border-strong); margin-left: clamp(20px, 5cqw, 60px); }
-.funnel-conv { color: var(--text-tertiary); font-size: clamp(11px, 2.2cqh, 15px); padding-left: 18px; }
+.funnel-conv { color: var(--text-tertiary); font-size: calc(clamp(11px, 2.2cqh, 15px) * var(--chart-text-scale, 1)); padding-left: 18px; }
 
 /* ---------- RANKING ---------- */
 /* Row height derives from the widget via cqh so 5 rows always fit. With
@@ -357,8 +357,8 @@ body { min-width: 1280px; }
 }
 .rank-main { display: flex; flex-direction: column; gap: clamp(2px, 0.6cqh, 12px); min-width: 0; }
 .rank-name-row { display: flex; justify-content: space-between; align-items: baseline; gap: clamp(8px, 1.2cqw, 24px); }
-.rank-name { font-size: 6.6cqh; color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rank-value { font-size: 6.6cqh; color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank-name { font-size: calc(6.6cqh * var(--chart-text-scale, 1)); color: var(--text-primary); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rank-value { font-size: calc(6.6cqh * var(--chart-text-scale, 1)); color: var(--text-primary); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rank-bar-track { position: relative; height: clamp(4px, 1cqh, 18px); background: var(--bg-elev-2); border-radius: 999px; overflow: hidden; }
 .rank-bar {
   height: 100%;
@@ -368,7 +368,7 @@ body { min-width: 1280px; }
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .rank-bar-target { display: none; }
-.rank-meta { display: flex; justify-content: space-between; font-size: clamp(10px, 2cqh, 32px); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rank-meta { display: flex; justify-content: space-between; font-size: calc(clamp(10px, 2cqh, 32px) * var(--chart-text-scale, 1)); color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .rank-delta.up { color: var(--success); }
 .rank-delta.down { color: var(--danger); }
 
@@ -388,7 +388,7 @@ body { min-width: 1280px; }
      in a h=1 cell (~130 px) that's ~28 px — both readable. The clamp
      floor protects very short cells; the ceiling stops it ballooning on
      tall ones. */
-  font-size: clamp(24px, 22cqh, 72px);
+  font-size: calc(clamp(24px, 22cqh, 72px) * var(--chart-text-scale, 1));
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.03em;
@@ -406,16 +406,16 @@ body { min-width: 1280px; }
 .sv-bottom {
   display: flex; flex-direction: column;
   gap: clamp(2px, 0.6cqh, 6px);
-  font-size: clamp(11px, 2.6cqh, 16px);
+  font-size: calc(clamp(11px, 2.6cqh, 16px) * var(--chart-text-scale, 1));
   margin-top: 2px;
   flex-shrink: 0;
 }
 .sv-delta { display: inline-flex; align-items: baseline; gap: 8px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.sv-delta-arrow { font-size: clamp(10px, 2cqh, 13px); }
+.sv-delta-arrow { font-size: calc(clamp(10px, 2cqh, 13px) * var(--chart-text-scale, 1)); }
 .sv-delta.up { color: var(--success); }
 .sv-delta.down { color: var(--danger); }
 .sv-delta-abs { color: var(--text-muted); font-weight: 400; }
-.sv-period { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(10px, 2.2cqh, 14px); }
+.sv-period { color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: calc(clamp(10px, 2.2cqh, 14px) * var(--chart-text-scale, 1)); }
 
 /* ---------- Empty / placeholder slot ---------- */
 .widget-add {
@@ -610,4 +610,69 @@ body:has([data-bg-effect]) { background: transparent; }
   .dash-rgl-wrap { flex: none; height: auto; }
   .dash-mobile-stack { display: flex; flex-direction: column; gap: 12px; }
   .dash-mobile-stack > * { width: 100%; }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Chart load-in intros
+
+   Numeric widgets (gauge, single value) count up from 0 via useCountUp and
+   the bar/sparkline charts use Recharts' own grow animation. The funnel and
+   ranking are hand-rolled markup, so their intro lives here as keyframes:
+   funnel stages reveal top-to-bottom, ranking rows fade in and their bars
+   grow from zero width. Everything snaps instantly under reduced motion.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Funnel — each SVG stage group scales up and fades in, staggered by index
+   via the inline animation-delay set in FunnelChart. transform-box: fill-box
+   keeps the scale origin at the stage's own centre rather than the SVG root. */
+.funnel-stage-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: funnel-stage-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes funnel-stage-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Funnel value labels rise into place in lockstep with their SVG stage. */
+.funnel-label-in {
+  animation: funnel-label-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes funnel-label-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Ranking — rows fade in, staggered by their settled position so the
+   leaderboard assembles top-to-bottom. Opacity only: the row's transform is
+   already owned by the FLIP positioning (translateY from --rank-pos). */
+.rank-row {
+  animation: rank-row-in 460ms ease-out both;
+  animation-delay: calc(var(--rank-pos, 0) * 80ms);
+}
+@keyframes rank-row-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Ranking bars grow from zero on mount. The 100% keyframe is implicit, so it
+   resolves to each bar's inline width; `both` is omitted so the inline width
+   takes over cleanly once the intro ends (and later width changes transition
+   per the .rank-bar rule above). */
+.rank-bar {
+  animation: rank-bar-grow 760ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--rank-pos, 0) * 80ms);
+}
+@keyframes rank-bar-grow {
+  from { width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .funnel-stage-in,
+  .funnel-label-in,
+  .rank-row,
+  .rank-bar {
+    animation: none;
+  }
 }

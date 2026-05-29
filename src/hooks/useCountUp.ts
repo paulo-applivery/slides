@@ -8,12 +8,29 @@ import { useEffect, useRef, useState } from "react";
  *
  * Lifted from the prototype's widgets.jsx so the visual behaviour stays
  * identical.
+ *
+ * Pass `introFromZero` to make the very first render an intro: the display
+ * starts at 0 (on both server and client, so hydration matches) and counts
+ * up to `value` once mounted. Honours `prefers-reduced-motion` by snapping
+ * straight to the target.
  */
-export function useCountUp(value: number, duration = 900): number {
-  const [display, setDisplay] = useState(value);
-  const state = useRef({ from: value, to: value, start: 0 });
+export function useCountUp(
+  value: number,
+  duration = 900,
+  introFromZero = false,
+): number {
+  const initial = introFromZero ? 0 : value;
+  const [display, setDisplay] = useState(initial);
+  const state = useRef({ from: initial, to: value, start: 0 });
 
   useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      setDisplay(value);
+      return;
+    }
     state.current.from = display;
     state.current.to = value;
     state.current.start = performance.now();

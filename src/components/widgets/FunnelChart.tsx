@@ -136,14 +136,18 @@ export function FunnelChart({ stages }: FunnelChartProps) {
             const rowEnd = (i + 1) * stageH;
             const left = (W - w) / 2;
             const right = left + w;
-            const fill = stageFill(i, stages.length);
+            const fill = s.color ?? stageFill(i, stages.length);
             const prevValue = i > 0 ? stages[i - 1].value : null;
             const conversion =
               prevValue && prevValue > 0
                 ? ((s.value / prevValue) * 100).toFixed(1)
                 : null;
             return (
-              <g key={`${s.label}-${i}`}>
+              <g
+                key={`${s.label}-${i}`}
+                className="funnel-stage-in"
+                style={{ animationDelay: `${i * 90}ms` }}
+              >
                 {/* Solid rectangle — the stage's main visual mass.
                     Hosts the SVG <title> tooltip too. */}
                 <rect
@@ -213,10 +217,12 @@ export function FunnelChart({ stages }: FunnelChartProps) {
             return (
               <div
                 key={`${s.label}-${i}-label`}
+                className="funnel-label-in"
                 style={{
                   flex: 1,
                   display: "flex",
                   flexDirection: "column",
+                  animationDelay: `${i * 90}ms`,
                 }}
               >
                 {/* Rectangle slot — centred value + optional
@@ -243,8 +249,20 @@ export function FunnelChart({ stages }: FunnelChartProps) {
                 >
                   <span
                     style={{
-                      fontWeight: 500,
-                      fontSize: "clamp(13px, 3.2cqh, 26px)",
+                      fontWeight: 600,
+                      fontSize:
+                        "calc(clamp(13px, 3.2cqh, 26px) * var(--chart-text-scale, 1))",
+                      // Chip so the value stays legible on any stage
+                      // fill — bright brand stages, light custom colors,
+                      // or the faded connector all read the same. The
+                      // dark translucent pill + white text is the
+                      // always-visible contrast guarantee.
+                      display: "inline-block",
+                      padding: "0.18em 0.55em",
+                      borderRadius: 999,
+                      background: "rgba(5, 11, 31, 0.42)",
+                      backdropFilter: "blur(2px)",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.22)",
                     }}
                   >
                     {s.formatted ?? fmtInt(s.value)}
@@ -252,7 +270,8 @@ export function FunnelChart({ stages }: FunnelChartProps) {
                   {conversion !== null && (
                     <span
                       style={{
-                        fontSize: "clamp(9px, 1.8cqh, 14px)",
+                        fontSize:
+                          "calc(clamp(9px, 1.8cqh, 14px) * var(--chart-text-scale, 1))",
                         opacity: 0.78,
                         // Tighter weight so the conversion reads as
                         // metadata rather than competing with the
@@ -295,7 +314,7 @@ export function FunnelChart({ stages }: FunnelChartProps) {
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              fontSize: 12,
+              fontSize: "calc(12px * var(--chart-text-scale, 1))",
               color: t["--text-tertiary"],
               lineHeight: 1.2,
             }}
@@ -306,7 +325,7 @@ export function FunnelChart({ stages }: FunnelChartProps) {
                 width: 12,
                 height: 12,
                 borderRadius: 3,
-                background: stageFill(i, stages.length),
+                background: s.color ?? stageFill(i, stages.length),
                 display: "inline-block",
                 flexShrink: 0,
               }}

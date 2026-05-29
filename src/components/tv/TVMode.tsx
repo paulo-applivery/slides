@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { Icons } from "@/components/ui/Icon";
 import { parseYoutubeId, youtubeEmbedUrl } from "@/lib/tv/slides";
@@ -52,6 +52,25 @@ export function TVMode({
 
   const slides = slideshow.slides;
   const current = slides[idx];
+
+  // Per-slide activation counter. Chart widgets play their intro
+  // animation on mount, but all slides stay mounted for the crossfade
+  // (only `.is-active` toggles opacity) — so without help the intros
+  // fire once at page load and never again. Bumping a slide's counter
+  // each time it becomes active feeds a remount key below, replaying
+  // the charts' intros every rotation. Only the incoming slide
+  // remounts; the outgoing one keeps its final frame while fading.
+  const [activations, setActivations] = useState<Record<string, number>>(
+    () => (slides[0] ? { [slides[0].id]: 1 } : {}),
+  );
+  const prevIdxRef = useRef(idx);
+  useEffect(() => {
+    if (prevIdxRef.current === idx) return;
+    prevIdxRef.current = idx;
+    const id = slides[idx]?.id;
+    if (!id) return;
+    setActivations((m) => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
+  }, [idx, slides]);
 
   // Resolve the active slide's effective appearance:
   //   - theme follows the bound dashboard (dashboard slides); media slides
@@ -195,6 +214,11 @@ export function TVMode({
         {slides.map((s, i) => {
           const fullbleed = s.type === "youtube" || s.type === "url";
           const active = i === idx;
+          // Remount dashboard content each activation so chart intros
+          // replay; media slides keep a stable key (no intro to replay,
+          // and remounting an iframe would reload the video).
+          const contentKey =
+            s.type === "dashboard" ? `${s.id}::${activations[s.id] ?? 0}` : s.id;
           return (
             <div
               key={s.id}
@@ -202,6 +226,7 @@ export function TVMode({
               className={`${fullbleed ? "tv-slide-fullbleed" : "tv-slide"} ${active ? "is-active" : ""}`}
             >
               <SlideContent
+                key={contentKey}
                 slide={s}
                 dashboard={
                   s.type === "dashboard" ? dashboardsById[s.dashboardId] : undefined

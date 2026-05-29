@@ -23,6 +23,13 @@ import type { BarDatum } from "./types";
  */
 export type BarChartProps = {
   data: BarDatum[];
+  /**
+   * Chart text-size multiplier. Recharts renders axis ticks as SVG
+   * `font-size` attributes (not CSS), so they can't read the
+   * `--chart-text-scale` var the other charts inherit — we take it as a
+   * prop and multiply the numeric sizes directly. `1` is the default.
+   */
+  textScale?: number;
 };
 
 const TOKENS = [
@@ -35,8 +42,10 @@ const TOKENS = [
   "--border-strong",
 ] as const;
 
-export function BarChart({ data }: BarChartProps) {
+export function BarChart({ data, textScale = 1 }: BarChartProps) {
   const t = useThemeTokens(TOKENS);
+  const tickSize = 10 * textScale;
+  const tooltipSize = 12 * textScale;
 
   return (
     <div className="bars-wrap" style={{ height: 220 }}>
@@ -53,13 +62,13 @@ export function BarChart({ data }: BarChartProps) {
             stroke={t["--text-muted"]}
             tickLine={false}
             axisLine={false}
-            tick={{ fontSize: 10, fontFamily: "var(--font-mono)", fill: t["--text-muted"] }}
+            tick={{ fontSize: tickSize, fontFamily: "var(--font-mono)", fill: t["--text-muted"] }}
           />
           <YAxis
             stroke={t["--text-muted"]}
             tickLine={false}
             axisLine={false}
-            tick={{ fontSize: 10, fontFamily: "var(--font-mono)", fill: t["--text-muted"] }}
+            tick={{ fontSize: tickSize, fontFamily: "var(--font-mono)", fill: t["--text-muted"] }}
             tickFormatter={(v: number) => fmtEUR(v).replace("€", "")}
             width={40}
           />
@@ -71,7 +80,7 @@ export function BarChart({ data }: BarChartProps) {
               borderRadius: 10,
               boxShadow: "var(--shadow-md)",
               color: t["--text-primary"],
-              fontSize: 12,
+              fontSize: tooltipSize,
               padding: "8px 12px",
             }}
             labelStyle={{ color: t["--text-primary"], fontWeight: 500 }}
@@ -84,12 +93,28 @@ export function BarChart({ data }: BarChartProps) {
               return d?.formatted ?? fmtEUR(Number(v));
             }}
           />
-          <Bar dataKey="prev" name="Previous" radius={[3, 3, 0, 0]}>
+          <Bar
+            dataKey="prev"
+            name="Previous"
+            radius={[3, 3, 0, 0]}
+            isAnimationActive
+            animationBegin={0}
+            animationDuration={700}
+            animationEasing="ease-out"
+          >
             {data.map((d) => (
               <Cell key={`prev-${d.label}`} fill={t["--bg-elev-3"]} />
             ))}
           </Bar>
-          <Bar dataKey="value" name="This period" radius={[3, 3, 0, 0]}>
+          <Bar
+            dataKey="value"
+            name="This period"
+            radius={[3, 3, 0, 0]}
+            isAnimationActive
+            animationBegin={140}
+            animationDuration={700}
+            animationEasing="ease-out"
+          >
             {data.map((d) => (
               <Cell
                 key={`cur-${d.label}`}

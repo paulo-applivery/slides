@@ -46,7 +46,7 @@ export function SingleValue({
   formatted,
   valueColor,
 }: SingleValueProps) {
-  const animated = useCountUp(value);
+  const animated = useCountUp(value, 900, true);
   const positive = (deltaPct ?? 0) >= 0;
   const t = useThemeTokens(TOKENS);
   const sparkColor = positive ? t["--success"] : t["--danger"];
@@ -91,7 +91,9 @@ export function SingleValue({
               stroke={sparkColor}
               strokeWidth={2}
               fill={`url(#${gradId})`}
-              isAnimationActive={false}
+              isAnimationActive
+              animationDuration={900}
+              animationEasing="ease-out"
               dot={false}
             />
           </AreaChart>

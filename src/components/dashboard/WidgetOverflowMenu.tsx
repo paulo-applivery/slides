@@ -29,6 +29,7 @@ export function WidgetOverflowMenu({
   hasBinding,
   currentTitle,
   currentTitleSize,
+  currentTextScale,
   currentTitleAlign,
   currentChip,
   currentTimePeriod,
@@ -49,6 +50,8 @@ export function WidgetOverflowMenu({
   currentTitle: string;
   /** Explicit titleSize override (px), or undefined for auto. */
   currentTitleSize?: number;
+  /** Chart text-size multiplier, or undefined for the default (1×). */
+  currentTextScale?: number;
   /** Current title alignment. */
   currentTitleAlign?: "left" | "center" | "right";
   /** Current chip configuration (undefined when no chip). */
@@ -66,6 +69,9 @@ export function WidgetOverflowMenu({
     id: string;
     label: string;
     queryId: string | null;
+    dateField?: string;
+    timePeriod?: TimePeriod;
+    color?: string;
   }>;
   /**
    * Legacy per-widget filter overlay. Layered on top of the bound
@@ -272,6 +278,7 @@ export function WidgetOverflowMenu({
         widgetType={widgetType}
         currentTitle={currentTitle}
         currentTitleSize={currentTitleSize}
+        currentTextScale={currentTextScale}
         currentTitleAlign={currentTitleAlign}
         currentChip={currentChip}
         currentTimePeriod={currentTimePeriod}

@@ -22,4 +22,10 @@ export type BarDatum = {
   formatted?: string;
 };
 
-export type FunnelStage = { label: string; value: number; formatted?: string };
+export type FunnelStage = {
+  label: string;
+  value: number;
+  formatted?: string;
+  /** Per-stage color override (hex). Falls back to the brand gradient. */
+  color?: string;
+};
