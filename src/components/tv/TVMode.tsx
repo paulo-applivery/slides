@@ -6,7 +6,11 @@ import { Icons } from "@/components/ui/Icon";
 import { parseYoutubeId, youtubeEmbedUrl } from "@/lib/tv/slides";
 import type { DashboardLayout, Slide } from "@/lib/db/schema";
 import type { TvWidgetResult } from "@/app/api/tv/data/route";
-import { DEFAULT_SLIDE_APPEARANCE, DEFAULT_BRAND_COLOR } from "@/lib/appearance";
+import {
+  DEFAULT_SLIDE_APPEARANCE,
+  DEFAULT_BRAND_COLOR,
+  type SlideshowTheme,
+} from "@/lib/appearance";
 import { SlideBackground } from "@/components/theme/SlideBackground";
 import { tvSessionKey } from "@/lib/tv/session";
 import { TVDashboardSlide } from "./TVDashboardSlide";
@@ -47,7 +51,7 @@ export function TVMode({
   dashboardsById,
   onRefresh,
 }: {
-  slideshow: { id: string; name: string; slides: Slide[] };
+  slideshow: { id: string; name: string; slides: Slide[]; theme?: SlideshowTheme };
   dashboardsById: Record<string, TvDashboard>;
   /**
    * Soft-refresh hook supplied by the anonymous <TVApp> wrapper — re-pulls
@@ -120,10 +124,16 @@ export function TVMode({
   //     (youtube / url) fall back to dark.
   //   - background / glass / brand come from the slide's own flair.
   const activeAppearance = current?.appearance ?? DEFAULT_SLIDE_APPEARANCE;
+  // Slideshow-level override wins when set to an explicit light/dark; "auto"
+  // (or the absent field on older payloads) falls back to the per-slide rule:
+  // dashboard slides follow their bound dashboard, media slides stay dark.
+  const slideshowTheme = slideshow.theme ?? "auto";
   const activeTheme: "light" | "dark" =
-    current?.type === "dashboard"
-      ? (dashboardsById[current.dashboardId]?.theme ?? "dark")
-      : "dark";
+    slideshowTheme === "light" || slideshowTheme === "dark"
+      ? slideshowTheme
+      : current?.type === "dashboard"
+        ? (dashboardsById[current.dashboardId]?.theme ?? "dark")
+        : "dark";
 
   // Lock scroll for the whole TV mount; capture + restore the document
   // theme so we don't bleed the slideshow's appearance into the app shell

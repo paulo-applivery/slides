@@ -64,6 +64,13 @@
       "when": 1780011225077,
       "tag": "0008_grey_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1780075198453,
+      "tag": "0009_abandoned_mindworm",
+      "breakpoints": true
     }
   ]
 }

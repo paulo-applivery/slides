@@ -23,6 +23,7 @@ import {
   DEFAULT_SLIDE_APPEARANCE,
   type BackgroundEffect,
   type SlideAppearance,
+  type SlideshowTheme,
 } from "@/lib/appearance";
 
 const BACKGROUND_EFFECTS: BackgroundEffect[] = [
@@ -31,6 +32,8 @@ const BACKGROUND_EFFECTS: BackgroundEffect[] = [
   "softAurora",
   "iridescence",
 ];
+
+const SLIDESHOW_THEMES: SlideshowTheme[] = ["auto", "light", "dark"];
 
 class ForbiddenError extends Error {
   constructor() {
@@ -106,6 +109,25 @@ export async function renameSlideshow(id: string, name: string): Promise<void> {
     .set({ name: finalName, updatedAt: new Date() })
     .where(and(eq(slideshows.id, id), eq(slideshows.workspaceId, workspaceId)));
   revalidatePath("/slideshows");
+  revalidatePath(`/slideshows/${id}/edit`);
+  revalidatePath(`/tv/${id}`);
+}
+
+/**
+ * Set the slideshow-wide theme override (`auto` / `light` / `dark`),
+ * applied during TV playback. Bumps `updatedAt` so every live screen's
+ * version poll picks the change up within a poll interval.
+ */
+export async function updateSlideshowTheme(
+  id: string,
+  theme: SlideshowTheme,
+): Promise<void> {
+  const { workspaceId } = await requireEditor();
+  if (!SLIDESHOW_THEMES.includes(theme)) return;
+  await db
+    .update(slideshows)
+    .set({ theme, updatedAt: new Date() })
+    .where(and(eq(slideshows.id, id), eq(slideshows.workspaceId, workspaceId)));
   revalidatePath(`/slideshows/${id}/edit`);
   revalidatePath(`/tv/${id}`);
 }

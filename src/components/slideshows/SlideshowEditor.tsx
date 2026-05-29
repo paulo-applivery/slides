@@ -12,12 +12,14 @@ import {
   requestTvRefresh,
   updateSlide,
   updateSlideAppearance,
+  updateSlideshowTheme,
   updateSlideUrl,
 } from "@/lib/slideshows";
 import type { DashboardLayout, Slide, SlideTransition } from "@/lib/db/schema";
 import {
   DEFAULT_SLIDE_APPEARANCE,
   type BackgroundEffect,
+  type SlideshowTheme,
 } from "@/lib/appearance";
 import { toast } from "@/lib/toast";
 
@@ -67,11 +69,14 @@ export type DashboardRef = {
 export function SlideshowEditor({
   slideshowId,
   initialSlides,
+  initialTheme,
   dashboards,
   tvHost,
 }: {
   slideshowId: string;
   initialSlides: Slide[];
+  /** Slideshow-wide TV theme override (auto / light / dark). */
+  initialTheme: SlideshowTheme;
   dashboards: DashboardRef[];
   /** Request host for the advertised TV URL (e.g. "localhost:3000"). */
   tvHost: string;
@@ -115,6 +120,11 @@ export function SlideshowEditor({
               <Icons.Plus size={14} /> Add slide
             </button>
           </div>
+
+          <SlideshowThemeControl
+            slideshowId={slideshowId}
+            initialTheme={initialTheme}
+          />
 
           <div className="ss-list">
             {slides.map((s, i) => (
@@ -401,6 +411,60 @@ const BG_OPTIONS: Array<{ value: BackgroundEffect; label: string }> = [
   { value: "softAurora", label: "Soft Aurora" },
   { value: "iridescence", label: "Iridescence" },
 ];
+
+/**
+ * Slideshow-wide TV theme override (Auto / Light / Dark).
+ *
+ * "Auto" keeps each slide's own theme (dashboard slides follow their bound
+ * dashboard, media slides stay dark) — the original behavior. Light/Dark
+ * force that theme across every slide on TV. Commits through
+ * `updateSlideshowTheme`, which bumps the slideshow's `updatedAt` so live
+ * screens pick the change up on their next version poll.
+ */
+const SLIDESHOW_THEME_OPTIONS: { v: SlideshowTheme; label: string }[] = [
+  { v: "auto", label: "Auto" },
+  { v: "light", label: "Light" },
+  { v: "dark", label: "Dark" },
+];
+
+function SlideshowThemeControl({
+  slideshowId,
+  initialTheme,
+}: {
+  slideshowId: string;
+  initialTheme: SlideshowTheme;
+}) {
+  // Optimistic local value so the segmented control reflects the click
+  // instantly; the server action revalidates the page behind it.
+  const [theme, setTheme] = useState<SlideshowTheme>(initialTheme);
+  const [pending, startTransition] = useTransition();
+  return (
+    <div className="ss-theme-control">
+      <span className="t-micro">TV theme</span>
+      <div className="ss-segmented">
+        {SLIDESHOW_THEME_OPTIONS.map((o) => (
+          <button
+            key={o.v}
+            type="button"
+            className={`ss-seg ${theme === o.v ? "active" : ""}`}
+            disabled={pending}
+            onClick={() => {
+              setTheme(o.v);
+              startTransition(() =>
+                guard(
+                  () => updateSlideshowTheme(slideshowId, o.v),
+                  "Couldn't update theme",
+                ),
+              );
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Manual "push refresh to live TVs" control.

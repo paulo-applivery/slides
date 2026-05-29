@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TVMode } from "./TVMode";
 import { TVUnpaired } from "./TVUnpaired";
 import { tvSessionKey } from "@/lib/tv/session";
+import type { SlideshowTheme } from "@/lib/appearance";
 import type { DashboardLayout, Slide } from "@/lib/db/schema";
 import type { TvWidgetResult } from "@/app/api/tv/data/route";
 
@@ -21,7 +22,7 @@ import type { TvWidgetResult } from "@/app/api/tv/data/route";
  * place — so an editor's edit reaches the screen in seconds with no reload.
  */
 export type TvDataResponse = {
-  slideshow: { id: string; name: string; slides: Slide[] };
+  slideshow: { id: string; name: string; slides: Slide[]; theme: SlideshowTheme };
   dashboardsById: Record<
     string,
     {

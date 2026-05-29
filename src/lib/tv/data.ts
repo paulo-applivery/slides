@@ -20,6 +20,7 @@ import {
   type DashboardLayout,
   type Slide,
 } from "@/lib/db/schema";
+import type { SlideshowTheme } from "@/lib/appearance";
 import { runQuery, type ExecutorResult } from "@/lib/queries/executor";
 import { resolveTimePeriod, type TimePeriod } from "@/lib/timePeriod";
 import type { Filter, QueryConfig } from "@/lib/queries/ast";
@@ -93,7 +94,7 @@ export type TvDashboard = {
 };
 
 export type TvData = {
-  slideshow: { id: string; name: string; slides: Slide[] };
+  slideshow: { id: string; name: string; slides: Slide[]; theme: SlideshowTheme };
   dashboardsById: Record<string, TvDashboard>;
   workspaceName: string;
   /**
@@ -358,6 +359,7 @@ export async function fetchTvSlideshowData(
       id: ss.id,
       name: ss.name,
       slides: ss.slides,
+      theme: ss.theme,
     },
     dashboardsById,
     workspaceName: "Workspace",

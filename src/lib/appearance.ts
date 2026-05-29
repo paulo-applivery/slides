@@ -19,6 +19,15 @@ export type BackgroundEffect = null | "pixelBlast" | "softAurora" | "iridescence
 export type DashboardTheme = "light" | "dark";
 
 /**
+ * Slideshow-level theme override, applied during TV playback only.
+ *   - "auto"  → each slide keeps its own theme (dashboard slides follow the
+ *               bound dashboard; media slides stay dark). Original behavior.
+ *   - "light" / "dark" → force that theme on every slide, ignoring the
+ *               per-dashboard setting.
+ */
+export type SlideshowTheme = "auto" | "light" | "dark";
+
+/**
  * Per-slide visual flair. Optional on the stored `Slide` (older rows
  * predate it); renderers fall back to `DEFAULT_SLIDE_APPEARANCE`.
  */

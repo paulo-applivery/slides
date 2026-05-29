@@ -83,6 +83,7 @@ export default async function SlideshowEditPage({
       <SlideshowEditor
         slideshowId={slideshow.id}
         initialSlides={slideshow.slides}
+        initialTheme={slideshow.theme}
         dashboards={workspaceDashboards}
         tvHost={tvHost}
       />

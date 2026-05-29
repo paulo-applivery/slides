@@ -25,6 +25,7 @@ import type { SlideAppearance } from "@/lib/appearance";
 
 const ROLES = ["admin", "editor", "viewer"] as const;
 const DASHBOARD_THEMES = ["light", "dark"] as const;
+const SLIDESHOW_THEMES = ["auto", "light", "dark"] as const;
 const JOIN_POLICIES = ["domain-auto", "invite-only"] as const;
 const INTEGRATION_PROVIDERS = ["stripe", "hubspot"] as const;
 const INTEGRATION_STATUSES = ["active", "error", "disconnected"] as const;
@@ -460,6 +461,12 @@ export const slideshows = sqliteTable("slideshows", {
     .$default(() => []),
   /** Used by /tv/[id] when a slide's duration is omitted. */
   defaultDurationSec: integer("default_duration_sec").notNull().default(30),
+  /**
+   * Slideshow-wide light/dark override, applied during TV playback. `auto`
+   * (default) keeps each slide's own theme (dashboard slides follow their
+   * bound dashboard); `light`/`dark` force that theme across every slide.
+   */
+  theme: text("theme", { enum: SLIDESHOW_THEMES }).notNull().default("auto"),
   createdBy: text("created_by").references(() => users.id, {
     onDelete: "set null",
   }),

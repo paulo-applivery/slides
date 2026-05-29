@@ -1,0 +1,1 @@
+ALTER TABLE `slideshows` ADD `theme` text DEFAULT 'auto' NOT NULL;
