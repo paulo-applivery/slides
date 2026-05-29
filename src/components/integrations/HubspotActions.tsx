@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui/Icon";
 import {
+  advanceHubspotSyncAction,
   disconnectHubspotAction,
   getHubspotSyncProgressAction,
   reimportHubspotAction,
@@ -50,14 +51,32 @@ export function HubspotActions() {
   const active =
     progress?.syncStatus === "queued" || progress?.syncStatus === "running";
 
-  // Poll while a background sync is in flight; stop once it's idle/errored.
+  // While a sync is in flight, drive it from the browser: each tick processes
+  // one bounded chunk server-side and returns the fresh progress. The open
+  // page thus drains the queue itself (cron is only a backstop), so manual
+  // "Sync now" / "Re-import all" make real progress regardless of the cron
+  // window. Single-flight: the next tick is scheduled only after the previous
+  // chunk resolves, so calls never overlap.
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => {
-      void refresh();
-    }, 2500);
-    return () => clearInterval(id);
-  }, [active, refresh]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const next = await advanceHubspotSyncAction();
+        if (cancelled) return;
+        setProgress(next);
+      } catch {
+        // Transient (revalidation, auth race) — retry on the next tick.
+      }
+      if (!cancelled) timer = setTimeout(() => void tick(), 1000);
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [active]);
 
   // When a sync finishes (active → idle/error), refetch the server component
   // so the surrounding card's Last sync / Records / status reflect the row.

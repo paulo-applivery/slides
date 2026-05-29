@@ -159,6 +159,37 @@ export async function getHubspotSyncProgressAction(): Promise<HubspotSyncProgres
   return getHubspotSyncProgress(workspaceId);
 }
 
+/**
+ * Process ONE bounded chunk of a queued/running sync and return the latest
+ * progress. The /integrations UI calls this on a loop while a sync is active,
+ * so the open page drains the queue itself — each call is a fresh request
+ * invocation, staying within the Worker's CPU/subrequest budget the same way
+ * a cron tick does. This makes the manual "Sync now" / "Re-import all" buttons
+ * actually do work in production (where `enqueueHubspotSyncAction` only queues
+ * and returns), instead of waiting on the next business-hours cron tick. The
+ * Cron Trigger remains a backstop for syncs whose tab was closed mid-run.
+ *
+ * No-ops (just returns progress) when the sync isn't queued/running, so a
+ * stray poll can't kick off an unintended full pass.
+ */
+export async function advanceHubspotSyncAction(): Promise<HubspotSyncProgress | null> {
+  const { workspaceId } = await requireEditor();
+  const current = await getHubspotSyncProgress(workspaceId);
+  if (
+    !current ||
+    (current.syncStatus !== "queued" && current.syncStatus !== "running")
+  ) {
+    return current;
+  }
+  const { done } = await runHubspotSyncChunk(workspaceId, { budgetMs: 12_000 });
+  if (done) {
+    revalidatePath("/integrations");
+    revalidatePath("/dashboards");
+    revalidatePath("/queries");
+  }
+  return getHubspotSyncProgress(workspaceId);
+}
+
 export async function disconnectHubspotAction(): Promise<void> {
   const { workspaceId } = await requireEditor();
   await disconnectHubspot(workspaceId);
