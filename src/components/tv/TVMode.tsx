@@ -8,7 +8,15 @@ import type { DashboardLayout, Slide } from "@/lib/db/schema";
 import type { TvWidgetResult } from "@/app/api/tv/data/route";
 import { DEFAULT_SLIDE_APPEARANCE, DEFAULT_BRAND_COLOR } from "@/lib/appearance";
 import { SlideBackground } from "@/components/theme/SlideBackground";
+import { tvSessionKey } from "@/lib/tv/session";
 import { TVDashboardSlide } from "./TVDashboardSlide";
+
+// Cheap revision poll — detects an editor's slide/dashboard change (or a
+// manual "Refresh TVs" press, which bumps the slideshow's updatedAt). Lives
+// here so BOTH render paths refresh: the anonymous <TVApp> wrapper and the
+// signed-in editor preview that renders <TVMode> straight from the server
+// component (the latter has no wrapper, so without this it never updated).
+const VERSION_POLL_MS = 10_000;
 
 /**
  * Full-bleed slideshow renderer.
@@ -37,9 +45,17 @@ type TvDashboard = {
 export function TVMode({
   slideshow,
   dashboardsById,
+  onRefresh,
 }: {
   slideshow: { id: string; name: string; slides: Slide[] };
   dashboardsById: Record<string, TvDashboard>;
+  /**
+   * Soft-refresh hook supplied by the anonymous <TVApp> wrapper — re-pulls
+   * the data payload in place (no reload, so no black flash). When absent
+   * (signed-in editor preview path), TVMode falls back to a full
+   * `location.reload()`, which re-runs the server component for fresh data.
+   */
+  onRefresh?: () => void;
 }) {
   // TV mode is intentionally chrome-free: no exit button, no top bar,
   // no footer. The screen runs unattended in a sales floor and any
@@ -174,6 +190,48 @@ export function TVMode({
     );
     return () => clearTimeout(t);
   }, [currentId, currentDuration, idx]);
+
+  // Live refresh poll. Seeds a baseline `rev` on the first successful poll,
+  // then on any higher rev triggers `onRefresh` (anonymous soft refetch) or
+  // a full reload (signed-in preview). Keeping `onRefresh` in a ref means
+  // the interval reads the latest callback without resubscribing each render.
+  const slideshowId = slideshow.id;
+  const onRefreshRef = useRef(onRefresh);
+  onRefreshRef.current = onRefresh;
+  useEffect(() => {
+    let baseline: number | null = null;
+    let cancelled = false;
+    const id = setInterval(async () => {
+      try {
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem(tvSessionKey(slideshowId))
+            : null;
+        const qs = new URLSearchParams({ slideshowId });
+        if (token) qs.set("token", token);
+        const res = await fetch(`/api/tv/version?${qs.toString()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+        const { rev } = (await res.json()) as { rev: number };
+        if (baseline === null) {
+          baseline = rev;
+          return;
+        }
+        if (rev > baseline) {
+          baseline = rev;
+          if (onRefreshRef.current) onRefreshRef.current();
+          else window.location.reload();
+        }
+      } catch {
+        // Soft — try again next tick.
+      }
+    }, VERSION_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [slideshowId]);
 
   // Cursor-hide after idle.
   useEffect(() => {

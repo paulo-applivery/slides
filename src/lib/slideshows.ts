@@ -6,12 +6,17 @@
  * Mutations bounce through `mutateSlides` so the JSON column stays
  * consistent. All operations scoped to the caller's workspace + role.
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
-import { slideshows, type Slide, type SlideTransition } from "@/lib/db/schema";
+import {
+  slideshows,
+  tvSessions,
+  type Slide,
+  type SlideTransition,
+} from "@/lib/db/schema";
 import { canEdit, type Role } from "@/lib/roles";
 import { parseYoutubeId, validateExternalUrl } from "@/lib/tv/slides";
 import {
@@ -139,6 +144,56 @@ export async function duplicateSlideshow(
     return {
       ok: false,
       error: err instanceof Error ? err.message : "Failed to duplicate.",
+    };
+  }
+}
+
+/**
+ * Force every live TV showing this slideshow to refresh.
+ *
+ * Bumps the slideshow's `updatedAt` so its `rev` climbs — the change every
+ * TV's version poll is already watching for. Within one poll interval each
+ * screen pulls fresh data (anonymous path) or reloads (signed-in editor
+ * preview). Returns the count of currently-active paired sessions so the
+ * editor can tell the operator how many screens it nudged (0 just means no
+ * anonymous TVs are paired right now; a signed-in preview still refreshes).
+ */
+export async function requestTvRefresh(
+  slideshowId: string,
+): Promise<{ ok: true; screens: number } | { ok: false; error: string }> {
+  try {
+    const { workspaceId } = await requireEditor();
+    const owns = await db.query.slideshows.findFirst({
+      where: and(
+        eq(slideshows.id, slideshowId),
+        eq(slideshows.workspaceId, workspaceId),
+      ),
+      columns: { id: true },
+    });
+    if (!owns) return { ok: false, error: "Slideshow not found." };
+
+    await db
+      .update(slideshows)
+      .set({ updatedAt: new Date() })
+      .where(eq(slideshows.id, slideshowId));
+
+    const active = await db
+      .select({ id: tvSessions.id })
+      .from(tvSessions)
+      .where(
+        and(
+          eq(tvSessions.slideshowId, slideshowId),
+          isNull(tvSessions.revokedAt),
+          gt(tvSessions.expiresAt, new Date()),
+        ),
+      );
+
+    revalidatePath(`/tv/${slideshowId}`);
+    return { ok: true, screens: active.length };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to refresh TVs.",
     };
   }
 }

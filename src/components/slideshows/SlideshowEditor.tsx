@@ -9,6 +9,7 @@ import {
   addYoutubeSlide,
   moveSlide,
   removeSlide,
+  requestTvRefresh,
   updateSlide,
   updateSlideAppearance,
   updateSlideUrl,
@@ -341,6 +342,7 @@ export function SlideshowEditor({
                   slideshowId={slideshowId}
                   slide={selected}
                 />
+                <RefreshTvsButton slideshowId={slideshowId} />
                 <div className="ss-config-meta">
                   <span className="t-small">
                     <Icons.Wifi size={13} /> Auto-loops indefinitely
@@ -399,6 +401,45 @@ const BG_OPTIONS: Array<{ value: BackgroundEffect; label: string }> = [
   { value: "softAurora", label: "Soft Aurora" },
   { value: "iridescence", label: "Iridescence" },
 ];
+
+/**
+ * Manual "push refresh to live TVs" control.
+ *
+ * Edits already reach screens within ~10s via the version poll, but this
+ * button forces it instantly: `requestTvRefresh` bumps the slideshow's
+ * `updatedAt`, which every polling TV (anonymous + signed-in preview) sees
+ * on its next tick and acts on. The returned screen count is surfaced in a
+ * toast so the operator knows how many paired TVs were nudged.
+ */
+function RefreshTvsButton({ slideshowId }: { slideshowId: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <button
+      type="button"
+      className="btn btn-secondary"
+      style={{ marginTop: 12, width: "100%", justifyContent: "center" }}
+      disabled={pending}
+      onClick={() => {
+        startTransition(async () => {
+          const res = await requestTvRefresh(slideshowId);
+          if (res.ok) {
+            toast.success({
+              title: "Refresh sent",
+              description:
+                res.screens === 1
+                  ? "1 paired screen will update shortly."
+                  : `${res.screens} paired screens will update shortly.`,
+            });
+          } else {
+            toast.error({ title: "Couldn't refresh TVs", description: res.error });
+          }
+        });
+      }}
+    >
+      <Icons.Refresh size={14} /> {pending ? "Sending…" : "Refresh TVs"}
+    </button>
+  );
+}
 
 /**
  * Per-slide visual flair — background effect, glass cards, brand color.
