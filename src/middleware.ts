@@ -30,6 +30,7 @@ const PUBLIC_PREFIXES = [
   "/api/tv/pair/start",
   "/api/tv/pair/poll",
   "/api/tv/data",
+  "/api/tv/version",
 ];
 
 export default auth((req) => {

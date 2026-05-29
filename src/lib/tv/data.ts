@@ -96,6 +96,14 @@ export type TvData = {
   slideshow: { id: string; name: string; slides: Slide[] };
   dashboardsById: Record<string, TvDashboard>;
   workspaceName: string;
+  /**
+   * Monotonic revision = max `updatedAt` (epoch ms) across the slideshow
+   * and every dashboard it references. The TV polls `/api/tv/version` for
+   * this cheaply and refetches the full payload only when it climbs — so
+   * an editor's slide/dashboard change reaches every paired screen within
+   * one poll interval instead of waiting on the 60s data refresh.
+   */
+  rev: number;
 };
 
 export async function fetchTvSlideshowData(
@@ -131,6 +139,7 @@ export async function fetchTvSlideshowData(
           name: dashboards.name,
           layout: dashboards.layout,
           theme: dashboards.theme,
+          updatedAt: dashboards.updatedAt,
         })
         .from(dashboards)
         .where(
@@ -336,6 +345,14 @@ export async function fetchTvSlideshowData(
     }
   }
 
+  // Revision = newest edit across the slideshow + its dashboards. The
+  // client seeds its baseline from this so the version poll never fires a
+  // redundant refetch right after a fresh load.
+  const rev = Math.max(
+    ss.updatedAt.getTime(),
+    ...refs.map((d) => d.updatedAt.getTime()),
+  );
+
   return {
     slideshow: {
       id: ss.id,
@@ -344,7 +361,52 @@ export async function fetchTvSlideshowData(
     },
     dashboardsById,
     workspaceName: "Workspace",
+    rev,
   };
+}
+
+/**
+ * Cheap revision probe for `/api/tv/version`. Returns the same `rev` as
+ * {@link fetchTvSlideshowData} (max `updatedAt` across the slideshow + its
+ * referenced dashboards) but WITHOUT running any widget queries — just two
+ * indexed reads — so the TV can poll it frequently. Returns `null` when the
+ * slideshow is missing or owned by another workspace.
+ */
+export async function fetchTvRevision(
+  workspaceId: string,
+  slideshowId: string,
+): Promise<number | null> {
+  const ss = await db.query.slideshows.findFirst({
+    where: eq(slideshows.id, slideshowId),
+    columns: { workspaceId: true, slides: true, updatedAt: true },
+  });
+  if (!ss || ss.workspaceId !== workspaceId) return null;
+
+  const dashboardIds = Array.from(
+    new Set(
+      ss.slides
+        .filter(
+          (s): s is Extract<Slide, { type: "dashboard" }> =>
+            s.type === "dashboard",
+        )
+        .map((s) => s.dashboardId),
+    ),
+  );
+
+  let rev = ss.updatedAt.getTime();
+  if (dashboardIds.length) {
+    const rows = await db
+      .select({ updatedAt: dashboards.updatedAt })
+      .from(dashboards)
+      .where(
+        and(
+          eq(dashboards.workspaceId, workspaceId),
+          inArray(dashboards.id, dashboardIds),
+        ),
+      );
+    for (const r of rows) rev = Math.max(rev, r.updatedAt.getTime());
+  }
+  return rev;
 }
 
 /**

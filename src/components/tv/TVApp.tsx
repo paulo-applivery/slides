@@ -14,7 +14,10 @@ import type { TvWidgetResult } from "@/app/api/tv/data/route";
  *   unpaired → render <TVUnpaired> (mints token, polls for confirmation)
  *
  * Once paired, refreshes the data every 60s so the TV picks up new sync
- * results without manual interaction.
+ * results without manual interaction. On top of that it polls a cheap
+ * `/api/tv/version` revision every 10s and refetches immediately when an
+ * editor changes the slides or a bound dashboard — so edits reach the
+ * screen in seconds rather than waiting on the slow data refresh.
  */
 export type TvDataResponse = {
   slideshow: { id: string; name: string; slides: Slide[] };
@@ -28,9 +31,16 @@ export type TvDataResponse = {
     }
   >;
   workspaceName: string;
+  /** Max `updatedAt` across the slideshow + its dashboards (epoch ms). */
+  rev: number;
 };
 
+// Full data refetch cadence — keeps widget numbers fresh as the sync
+// engine updates mirror tables (those changes don't bump `updatedAt`, so
+// the version poll alone wouldn't catch them).
 const REFRESH_INTERVAL_MS = 60_000;
+// Cheap revision poll — detects editor changes to slides / dashboards.
+const VERSION_POLL_MS = 10_000;
 const STORAGE_KEY = (slideshowId: string) =>
   `atlas:tv-session:${slideshowId}`;
 
@@ -42,6 +52,9 @@ export function TVApp({ slideshowId }: { slideshowId: string }) {
     | { kind: "error"; message: string }
   >({ kind: "checking" });
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Last revision we've rendered. Seeded from every successful data load so
+  // the version poll only triggers a refetch when an edit lands afterward.
+  const lastRevRef = useRef<number | null>(null);
 
   const tryWithToken = useCallback(
     async (token: string, silent = false) => {
@@ -56,6 +69,7 @@ export function TVApp({ slideshowId }: { slideshowId: string }) {
           return;
         }
         const data = (await res.json()) as TvDataResponse;
+        lastRevRef.current = data.rev;
         setState({ kind: "paired", data });
       } catch (err) {
         // A failed background refresh shouldn't blow up the current view.
@@ -88,6 +102,33 @@ export function TVApp({ slideshowId }: { slideshowId: string }) {
     return () => {
       if (refreshTimer.current) clearInterval(refreshTimer.current);
     };
+  }, [state.kind, slideshowId, tryWithToken]);
+
+  // Fast revision poll — an editor saving slides or a bound dashboard bumps
+  // the slideshow/dashboard `updatedAt`, which lifts `rev`. When we see a
+  // higher rev than the one we rendered, pull the full payload silently
+  // (soft in-place swap — no page reload, so no black flash on the TV).
+  useEffect(() => {
+    if (state.kind !== "paired") return;
+    const id = setInterval(async () => {
+      const token = localStorage.getItem(STORAGE_KEY(slideshowId));
+      if (!token) return;
+      try {
+        const res = await fetch(
+          `/api/tv/version?token=${encodeURIComponent(token)}&slideshowId=${encodeURIComponent(slideshowId)}`,
+          { cache: "no-store" },
+        );
+        if (!res.ok) return;
+        const { rev } = (await res.json()) as { rev: number };
+        if (lastRevRef.current !== null && rev > lastRevRef.current) {
+          // tryWithToken updates lastRevRef on success, closing the trigger.
+          tryWithToken(token, /* silent */ true);
+        }
+      } catch {
+        // Soft — try again next tick.
+      }
+    }, VERSION_POLL_MS);
+    return () => clearInterval(id);
   }, [state.kind, slideshowId, tryWithToken]);
 
   const onPaired = useCallback(

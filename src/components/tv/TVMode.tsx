@@ -51,7 +51,10 @@ export function TVMode({
   const [idx, setIdx] = useState(0);
 
   const slides = slideshow.slides;
-  const current = slides[idx];
+  // A live refetch (editor changed the deck) can shrink the slide list out
+  // from under `idx`. Fall back to the first slide for this render so we
+  // never dereference `undefined`; the clamp effect below resets `idx`.
+  const current = slides[idx] ?? slides[0];
 
   // Per-slide activation counter. Chart widgets play their intro
   // animation on mount, but all slides stay mounted for the crossfade
@@ -144,6 +147,11 @@ export function TVMode({
       html.style.removeProperty("--primary");
     }
   }, [activeTheme, activeAppearance.glassCards, activeAppearance.brandColor]);
+
+  // Keep `idx` in range when the deck shrinks after a live refetch.
+  useEffect(() => {
+    if (slides.length > 0 && idx > slides.length - 1) setIdx(0);
+  }, [slides.length, idx]);
 
   // Slide auto-advance.
   useEffect(() => {
