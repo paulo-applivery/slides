@@ -129,7 +129,7 @@ export function TVUnpaired({
         <div className="tv-up-grid">
           <div className="tv-up-left">
             <div className="tv-up-brand">
-              <span className="tv-up-mark" />
+              <CompassMark />
               <span>Applivery Atlas</span>
             </div>
             <h1 className="tv-up-h1">Pair this screen</h1>
@@ -225,4 +225,106 @@ export function TVUnpaired({
 function formatPin(pin: string): string {
   if (pin.length !== 6) return pin;
   return `${pin.slice(0, 3)} ${pin.slice(3)}`;
+}
+
+/**
+ * Animated compass brand mark — fitting for "Atlas" on a screen that is
+ * literally "waiting for pairing" (i.e. seeking). An inline SVG so the
+ * pieces (glow, face, ticks, radar sweep, seeking needle, hub) animate
+ * independently via CSS. All motion is paused under
+ * `prefers-reduced-motion` (see screens.css).
+ */
+function CompassMark() {
+  // 12 tick marks every 30°. The four cardinals are "major" (longer);
+  // north (0°) is brand-tinted.
+  const ticks = Array.from({ length: 12 }, (_, i) => i * 30);
+
+  return (
+    <span className="tv-compass" aria-hidden="true">
+      <svg
+        className="tv-compass-svg"
+        viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <radialGradient id="tv-compass-face" cx="38%" cy="32%" r="80%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.10)" />
+            <stop offset="55%" stopColor="rgba(20,30,60,0.55)" />
+            <stop offset="100%" stopColor="rgba(6,10,24,0.85)" />
+          </radialGradient>
+          <linearGradient id="tv-compass-needle" x1="50" y1="14" x2="50" y2="50" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor="#9CB8FF" />
+            <stop offset="100%" stopColor="var(--primary)" />
+          </linearGradient>
+          <radialGradient id="tv-compass-sweep" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(124,165,255,0.45)" />
+            <stop offset="100%" stopColor="rgba(124,165,255,0)" />
+          </radialGradient>
+        </defs>
+
+        {/* Breathing glow halo */}
+        <circle className="tv-compass-glow" cx="50" cy="50" r="44" />
+
+        {/* Glassy face + rings */}
+        <circle cx="50" cy="50" r="46" fill="url(#tv-compass-face)" />
+        <circle
+          className="tv-compass-ring"
+          cx="50"
+          cy="50"
+          r="46"
+          fill="none"
+        />
+        <circle
+          className="tv-compass-ring-inner"
+          cx="50"
+          cy="50"
+          r="37"
+          fill="none"
+        />
+
+        {/* Rotating radar sweep wedge */}
+        <g className="tv-compass-sweep">
+          <path
+            d="M50 50 L27 11 A46 46 0 0 1 73 11 Z"
+            fill="url(#tv-compass-sweep)"
+          />
+        </g>
+
+        {/* Tick marks */}
+        <g className="tv-compass-ticks">
+          {ticks.map((a) => {
+            const major = a % 90 === 0;
+            const north = a === 0;
+            return (
+              <line
+                key={a}
+                x1="50"
+                y1={major ? 8 : 10}
+                x2="50"
+                y2={major ? 15 : 13}
+                transform={`rotate(${a} 50 50)`}
+                className={
+                  north
+                    ? "tv-compass-tick tv-compass-tick-n"
+                    : major
+                      ? "tv-compass-tick tv-compass-tick-major"
+                      : "tv-compass-tick"
+                }
+              />
+            );
+          })}
+        </g>
+
+        {/* Seeking needle */}
+        <g className="tv-compass-needle">
+          <path d="M50 17 L56 50 L50 47 L44 50 Z" fill="url(#tv-compass-needle)" />
+          <path d="M50 83 L44 50 L50 53 L56 50 Z" fill="rgba(255,255,255,0.32)" />
+        </g>
+
+        {/* Center hub */}
+        <circle className="tv-compass-hub" cx="50" cy="50" r="4" />
+        <circle className="tv-compass-hub-dot" cx="50" cy="50" r="1.6" />
+      </svg>
+    </span>
+  );
 }

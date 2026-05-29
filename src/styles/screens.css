@@ -256,8 +256,59 @@
 }
 .tv-up-left { max-width: 540px; }
 .tv-up-brand { display: flex; align-items: center; gap: 14px; font-size: 16px; font-weight: 500; color: var(--text-primary); margin-bottom: 64px; }
-.tv-up-mark { width: 32px; height: 32px; aspect-ratio: 1 / 1; flex-shrink: 0; border-radius: 8px; background: var(--brand); position: relative; box-shadow: 0 0 0 4px var(--primary-soft); }
-.tv-up-mark::after { content: ''; position: absolute; inset: 8px; background: #fff; clip-path: polygon(50% 0%, 100% 100%, 50% 70%, 0% 100%); }
+/* Animated compass brand mark (TVUnpaired). The SVG fills the box; each
+   layer animates independently. `transform-box: view-box` so rotations
+   pivot around the SVG's own 0–100 coordinate center, not the DOM box. */
+.tv-compass { width: 42px; height: 42px; flex-shrink: 0; display: inline-block; }
+.tv-compass-svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.tv-compass-svg * { transform-box: view-box; transform-origin: center; }
+
+.tv-compass-glow {
+  fill: var(--primary);
+  opacity: 0.3;
+  animation: tv-compass-breathe 3.2s ease-in-out infinite;
+}
+.tv-compass-ring { stroke: rgba(124, 165, 255, 0.45); stroke-width: 1.5; }
+.tv-compass-ring-inner { stroke: rgba(124, 165, 255, 0.18); stroke-width: 1; }
+
+.tv-compass-sweep { animation: tv-compass-sweep 7s linear infinite; }
+
+.tv-compass-tick { stroke: rgba(255, 255, 255, 0.32); stroke-width: 1.4; stroke-linecap: round; }
+.tv-compass-tick-major { stroke: rgba(255, 255, 255, 0.6); stroke-width: 2; }
+.tv-compass-tick-n { stroke: var(--primary); stroke-width: 2.4; }
+
+.tv-compass-needle {
+  animation: tv-compass-seek 9s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  filter: drop-shadow(0 0 3px rgba(124, 165, 255, 0.5));
+}
+.tv-compass-hub { fill: #0b1020; stroke: rgba(255, 255, 255, 0.5); stroke-width: 1.2; }
+.tv-compass-hub-dot { fill: var(--primary); }
+
+@keyframes tv-compass-breathe {
+  0%, 100% { opacity: 0.22; transform: scale(0.9); }
+  50% { opacity: 0.5; transform: scale(1.05); }
+}
+@keyframes tv-compass-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+/* Hunts for north: snaps to a bearing, holds, then seeks the next.
+   Final 345° ≡ -15° (mod 360) so the loop is seamless. */
+@keyframes tv-compass-seek {
+  0%, 8% { transform: rotate(-15deg); }
+  22%, 33% { transform: rotate(160deg); }
+  47%, 58% { transform: rotate(70deg); }
+  72%, 83% { transform: rotate(280deg); }
+  100% { transform: rotate(345deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv-compass-glow,
+  .tv-compass-sweep,
+  .tv-compass-needle {
+    animation: none;
+  }
+  .tv-compass-needle { transform: rotate(-12deg); }
+}
 .tv-up-h1 { font-size: 56px; font-weight: 500; color: var(--text-primary); letter-spacing: -0.025em; line-height: 1.1; margin: 0 0 18px; }
 .tv-up-sub { font-size: 18px; line-height: 1.5; color: var(--text-tertiary); margin: 0 0 36px; }
 .tv-up-steps { list-style: none; padding: 0; margin: 0 0 36px; display: flex; flex-direction: column; gap: 14px; }
