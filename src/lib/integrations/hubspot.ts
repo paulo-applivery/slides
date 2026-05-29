@@ -737,6 +737,16 @@ export async function enqueueHubspotSync(
     .where(eq(integrations.id, row.id));
 }
 
+/**
+ * True when the live DB driver is Cloudflare D1 (the only driver exposing
+ * `.batch`). On D1 a Cron Trigger drains the queue; in local dev we run
+ * better-sqlite3 with no cron, so manual syncs must drain inline instead —
+ * callers branch on this. See [[hubspot-sync]].
+ */
+export function syncRunsViaCron(): boolean {
+  return typeof (db as unknown as { batch?: unknown }).batch === "function";
+}
+
 export type HubspotSyncProgress = {
   syncStatus: "idle" | "queued" | "running" | "error";
   phase: HubspotSyncPhase | null;

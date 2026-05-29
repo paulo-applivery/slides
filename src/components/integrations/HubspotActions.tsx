@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Icons } from "@/components/ui/Icon";
 import {
   disconnectHubspotAction,
@@ -30,6 +31,7 @@ export function HubspotActions() {
   const [reimporting, startReimport] = useTransition();
   const [disconnecting, startDisconnect] = useTransition();
   const [progress, setProgress] = useState<HubspotSyncProgress | null>(null);
+  const router = useRouter();
 
   const refresh = useCallback(async () => {
     try {
@@ -56,6 +58,14 @@ export function HubspotActions() {
     }, 2500);
     return () => clearInterval(id);
   }, [active, refresh]);
+
+  // When a sync finishes (active → idle/error), refetch the server component
+  // so the surrounding card's Last sync / Records / status reflect the row.
+  const wasActive = useRef(false);
+  useEffect(() => {
+    if (wasActive.current && !active) router.refresh();
+    wasActive.current = active;
+  }, [active, router]);
 
   const busy = active || syncing || reimporting;
 

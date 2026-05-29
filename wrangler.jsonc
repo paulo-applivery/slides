@@ -5,9 +5,11 @@
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
   "triggers": {
-    // Every minute: the processor advances each queued/running HubSpot sync
-    // by one bounded chunk, so large portals complete across many ticks.
-    "crons": ["* * * * *"]
+    // Every 10 minutes during business hours, Mon–Fri. Cloudflare crons run
+    // in UTC; 03:00–23:00 UTC covers 06:00–20:00 local across the UTC-3 to
+    // UTC+3 timezone band. Each tick advances every queued/running HubSpot
+    // sync by one bounded chunk, so large portals complete across many ticks.
+    "crons": ["*/10 3-23 * * 1-5"]
   },
   "assets": {
     "binding": "ASSETS",

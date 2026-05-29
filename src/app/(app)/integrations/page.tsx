@@ -44,7 +44,8 @@ export default async function IntegrationsPage() {
           }}
         >
           Connect your revenue stack to populate dashboards with live data. The
-          sync engine refreshes every 5 minutes once an integration is active.
+          sync engine refreshes every 10 minutes during business hours once an
+          integration is active.
         </p>
         <div
           style={{

@@ -18,6 +18,8 @@ import {
   enqueueHubspotSync,
   getHubspotSyncProgress,
   listHubspotProperties,
+  runHubspotSyncChunk,
+  syncRunsViaCron,
   updateHubspotFieldSelection,
 } from "@/lib/integrations/hubspot";
 import type { HubspotSyncProgress } from "@/lib/integrations/hubspot";
@@ -34,6 +36,26 @@ async function requireEditor() {
   const role = (session?.user?.role ?? null) as Role | null;
   if (!workspaceId || !canEdit(role)) throw new ForbiddenError();
   return { workspaceId };
+}
+
+/**
+ * Queue a HubSpot sync. On Cloudflare (D1) the Cron Trigger drains the queue,
+ * so we return immediately and the UI polls progress. In local dev there's no
+ * cron, so we drain the chunks inline here — preserving the old "click Sync,
+ * see results" workflow. The chunk loop is idempotent + resumable either way.
+ */
+async function enqueueHubspotSyncAction(
+  workspaceId: string,
+  opts: { forceFull?: boolean } = {},
+): Promise<void> {
+  await enqueueHubspotSync(workspaceId, opts);
+  if (syncRunsViaCron()) return;
+  // Dev (better-sqlite3): no Worker cron — grind to completion now.
+  let done = false;
+  let guard = 0;
+  while (!done && guard++ < 500) {
+    done = (await runHubspotSyncChunk(workspaceId, { budgetMs: 60_000 })).done;
+  }
 }
 
 /** Used by the connect form on /integrations. */
@@ -88,11 +110,12 @@ export async function connectHubspotAction(
     const token = String(formData.get("accessToken") ?? "").trim();
     if (!token) return { ok: false, error: "Paste your HubSpot Private App token." };
     await connectHubspot(workspaceId, token);
-    // Queue the first sync; the Cloudflare cron tick grinds through it in
-    // bounded chunks. The UI polls progress rather than blocking the request
-    // (a large portal can't be pulled within one Worker invocation).
-    await enqueueHubspotSync(workspaceId);
+    // Queue the first sync; on Cloudflare the cron tick grinds through it in
+    // bounded chunks while the UI polls progress (a large portal can't be
+    // pulled within one Worker invocation). In dev this drains inline.
+    await enqueueHubspotSyncAction(workspaceId);
     revalidatePath("/integrations");
+    revalidatePath("/dashboards");
     return { ok: true };
   } catch (err) {
     return {
@@ -105,8 +128,9 @@ export async function connectHubspotAction(
 /** Queue an incremental sync; the cron tick processes it in chunks. */
 export async function syncHubspotAction(): Promise<void> {
   const { workspaceId } = await requireEditor();
-  await enqueueHubspotSync(workspaceId);
+  await enqueueHubspotSyncAction(workspaceId);
   revalidatePath("/integrations");
+  revalidatePath("/dashboards");
 }
 
 /**
@@ -123,8 +147,10 @@ export async function syncHubspotAction(): Promise<void> {
  */
 export async function reimportHubspotAction(): Promise<void> {
   const { workspaceId } = await requireEditor();
-  await enqueueHubspotSync(workspaceId, { forceFull: true });
+  await enqueueHubspotSyncAction(workspaceId, { forceFull: true });
   revalidatePath("/integrations");
+  revalidatePath("/dashboards");
+  revalidatePath("/queries");
 }
 
 /** Poll target for the /integrations UI while a sync runs. */
