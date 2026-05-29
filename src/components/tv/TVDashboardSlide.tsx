@@ -4,8 +4,10 @@ import {
   BarChart,
   FunnelChart,
   GaugeChart,
+  ImageWidget,
   RankingWidget,
   SingleValue,
+  TextWidget,
   WidgetShell,
 } from "@/components/widgets";
 import { SEED } from "@/lib/seed";
@@ -30,6 +32,14 @@ type WidgetDisplay = {
   textScale?: number;
   titleAlign?: "left" | "center" | "right";
   chip?: WidgetChip;
+  /** Text-widget content. */
+  text?: string;
+  /** Image-widget source URL. */
+  imageUrl?: string;
+  /** Image-widget object-fit. */
+  imageFit?: "contain" | "cover";
+  /** Static widgets: render inside card chrome (default true). */
+  card?: boolean;
 };
 
 /**
@@ -133,9 +143,36 @@ function TvWidget({
   widget: DashboardLayout["widgets"][number];
   result?: TvWidgetResult;
 }) {
-  const status = resultStatus(widget.type, result);
   const display = (widget.display ?? {}) as WidgetDisplay;
   const title = display.title ?? humanType(widget.type);
+
+  // Static widgets (text / image) carry their content in the display
+  // blob — render directly with optional card chrome, no executor result.
+  if (widget.type === "text" || widget.type === "image") {
+    const inCard = display.card !== false;
+    return (
+      <WidgetShell
+        title={title}
+        bare={!inCard}
+        hideTitle
+        textScale={display.textScale}
+        titleAlign={display.titleAlign}
+        dragHandle={false}
+      >
+        {widget.type === "text" ? (
+          <TextWidget text={display.text ?? ""} align={display.titleAlign} />
+        ) : (
+          <ImageWidget
+            src={display.imageUrl}
+            fit={display.imageFit}
+            alt={display.title}
+          />
+        )}
+      </WidgetShell>
+    );
+  }
+
+  const status = resultStatus(widget.type, result);
 
   return (
     <WidgetShell
@@ -251,6 +288,10 @@ function renderBound(
       );
     case "funnel":
       return renderSeedFallback(widget);
+    case "text":
+    case "image":
+      // Static widgets are rendered before renderBound is reached.
+      return null;
   }
 }
 
@@ -281,6 +322,9 @@ function renderSeedFallback(widget: DashboardLayout["widgets"][number]) {
       return <FunnelChart stages={[...SEED.funnel]} />;
     case "ranking":
       return <RankingWidget reps={[...SEED.reps]} />;
+    case "text":
+    case "image":
+      return null;
   }
 }
 
@@ -296,6 +340,10 @@ function humanType(t: WidgetType): string {
       return "Funnel";
     case "ranking":
       return "Ranking";
+    case "text":
+      return "Text";
+    case "image":
+      return "Image";
   }
 }
 

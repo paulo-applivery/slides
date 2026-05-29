@@ -140,7 +140,14 @@ export const verificationTokens = sqliteTable(
 export type DashboardLayout = {
   widgets: Array<{
     id: string;
-    type: "gauge" | "bar" | "funnel" | "ranking" | "singleValue";
+    type:
+      | "gauge"
+      | "bar"
+      | "funnel"
+      | "ranking"
+      | "singleValue"
+      | "text"
+      | "image";
     queryId: string | null;
     pos: { x: number; y: number; w: number; h: number };
     display?: Record<string, unknown>;

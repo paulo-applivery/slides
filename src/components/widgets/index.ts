@@ -4,5 +4,7 @@ export { BarChart } from "./BarChart";
 export { FunnelChart } from "./FunnelChart";
 export { RankingWidget } from "./RankingWidget";
 export { SingleValue } from "./SingleValue";
+export { TextWidget } from "./TextWidget";
+export { ImageWidget } from "./ImageWidget";
 export { SourcePill } from "./SourcePill";
 export type { DataSource, Rep, BarDatum, FunnelStage } from "./types";

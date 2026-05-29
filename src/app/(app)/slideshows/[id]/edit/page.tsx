@@ -31,9 +31,16 @@ export default async function SlideshowEditPage({
   const slideshow = await getSlideshow(params.id);
   if (!slideshow) notFound();
 
-  // Dashboards available for the "add slide" picker.
+  // Dashboards available for the "add slide" picker. We pull `layout`
+  // and `theme` too so the editor can render a wireframe thumbnail of
+  // each dashboard's widget grid (no query execution needed).
   const workspaceDashboards = await db
-    .select({ id: dashboards.id, name: dashboards.name })
+    .select({
+      id: dashboards.id,
+      name: dashboards.name,
+      layout: dashboards.layout,
+      theme: dashboards.theme,
+    })
     .from(dashboards)
     .where(
       and(

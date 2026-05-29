@@ -173,7 +173,14 @@ export async function archiveDashboard(id: string): Promise<void> {
 // Layout mutations (Phase 3 slice 1)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type WidgetType = "gauge" | "bar" | "funnel" | "ranking" | "singleValue";
+type WidgetType =
+  | "gauge"
+  | "bar"
+  | "funnel"
+  | "ranking"
+  | "singleValue"
+  | "text"
+  | "image";
 
 /** Read-modify-write helper so all layout mutations stay consistent. */
 async function mutateLayout(
@@ -203,6 +210,8 @@ const DEFAULT_SPANS: Record<WidgetType, { w: number; h: number }> = {
   bar: { w: 7, h: 2 },
   funnel: { w: 7, h: 2 },
   ranking: { w: 5, h: 2 },
+  text: { w: 4, h: 1 },
+  image: { w: 4, h: 2 },
 };
 
 /** Append a new (unbound) widget to a dashboard's layout. */
@@ -398,6 +407,26 @@ export async function updateWidgetDisplay(
         import("@/lib/queries/ast").Filter[]
       >
     > | null;
+    /**
+     * Text-widget content. Trimmed + length-capped server-side; empty
+     * clears the key. `null` also clears.
+     */
+    text?: string | null;
+    /**
+     * Image-widget source URL. Only http(s) and root-relative URLs are
+     * persisted — `javascript:`/`data:` and other schemes are rejected
+     * (dropped) to avoid stored-XSS via an `<img src>` sink. Empty or
+     * `null` clears the key.
+     */
+    imageUrl?: string | null;
+    /** Image object-fit. Only "contain"/"cover"; anything else clears. */
+    imageFit?: "contain" | "cover" | null;
+    /**
+     * Static widgets (text / image): render inside the card chrome. The
+     * default is "in card" (true), so we only persist `false`; `true`
+     * and `null` drop the key.
+     */
+    card?: boolean | null;
   },
 ): Promise<void> {
   const { workspaceId } = await requireEditor();
@@ -588,6 +617,35 @@ export async function updateWidgetDisplay(
             nextDisplay.chip = next;
           }
         }
+      }
+      if (patch.text !== undefined) {
+        const t = patch.text?.toString().slice(0, 2000) ?? "";
+        if (!t.trim()) delete nextDisplay.text;
+        else nextDisplay.text = t;
+      }
+      if (patch.imageUrl !== undefined) {
+        const raw = patch.imageUrl?.toString().trim() ?? "";
+        // Allow only http(s) absolute URLs and root-relative paths. Reject
+        // `javascript:`, `data:`, and any other scheme so a saved layout
+        // can't smuggle an active-content URL into an `<img src>` sink.
+        const safe =
+          raw &&
+          (/^https?:\/\//i.test(raw) ||
+            (raw.startsWith("/") && !raw.startsWith("//")));
+        if (!safe) delete nextDisplay.imageUrl;
+        else nextDisplay.imageUrl = raw.slice(0, 2000);
+      }
+      if (patch.imageFit !== undefined) {
+        if (patch.imageFit === "contain" || patch.imageFit === "cover") {
+          nextDisplay.imageFit = patch.imageFit;
+        } else {
+          delete nextDisplay.imageFit;
+        }
+      }
+      if (patch.card !== undefined) {
+        // Default is "in card" (true) — only persist the deviation.
+        if (patch.card === false) nextDisplay.card = false;
+        else delete nextDisplay.card;
       }
       return { ...w, display: nextDisplay };
     }),

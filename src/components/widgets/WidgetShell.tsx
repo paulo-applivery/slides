@@ -48,6 +48,20 @@ export type WidgetShellProps = {
   dragHandle?: boolean;
   /** The 3-dot overflow menu (editor-only). */
   action?: ReactNode;
+  /**
+   * Strip the card chrome (background, border, shadow). Used by the
+   * Text / Image widgets when the operator turns "Show in card" off so
+   * the content sits directly on the dashboard surface. Editor controls
+   * float over the corner instead of taking a header row.
+   */
+  bare?: boolean;
+  /**
+   * Suppress the title (and chip) in the header — the header then only
+   * carries the editor controls (drag + overflow). Used by static
+   * widgets whose content *is* the widget, so a title row would be
+   * redundant.
+   */
+  hideTitle?: boolean;
 };
 
 export function WidgetShell({
@@ -59,6 +73,8 @@ export function WidgetShell({
   children,
   dragHandle = true,
   action,
+  bare = false,
+  hideTitle = false,
 }: WidgetShellProps) {
   const titleStyle: React.CSSProperties = {
     ...(titleSize ? { fontSize: titleSize } : {}),
@@ -70,25 +86,34 @@ export function WidgetShell({
     textScale && textScale !== 1
       ? ({ "--chart-text-scale": textScale } as React.CSSProperties)
       : undefined;
+  // The header is only worth rendering when it has something to show:
+  // the title (unless hidden) or an editor control (drag / overflow).
+  const showHeader = (!hideTitle && (title || chip)) || dragHandle || !!action;
   return (
-    <div className="widget">
-      <header className="widget-head">
-        <div className="widget-head-l">
-          {dragHandle && (
-            <span className="widget-drag" title="Drag">
-              <Icons.Drag size={14} />
-            </span>
-          )}
-          <div
-            className="widget-title"
-            style={Object.keys(titleStyle).length ? titleStyle : undefined}
-          >
-            {title}
+    <div className={bare ? "widget widget--bare" : "widget"}>
+      {showHeader && (
+        <header className="widget-head">
+          <div className="widget-head-l">
+            {dragHandle && (
+              <span className="widget-drag" title="Drag">
+                <Icons.Drag size={14} />
+              </span>
+            )}
+            {!hideTitle && (
+              <>
+                <div
+                  className="widget-title"
+                  style={Object.keys(titleStyle).length ? titleStyle : undefined}
+                >
+                  {title}
+                </div>
+                {chip?.text ? <WidgetChipPill chip={chip} /> : null}
+              </>
+            )}
           </div>
-          {chip?.text ? <WidgetChipPill chip={chip} /> : null}
-        </div>
-        {action && <div className="widget-head-r">{action}</div>}
-      </header>
+          {action && <div className="widget-head-r">{action}</div>}
+        </header>
+      )}
       <div className="widget-body" style={bodyStyle}>{children}</div>
     </div>
   );

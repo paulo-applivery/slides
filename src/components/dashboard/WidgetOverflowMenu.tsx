@@ -37,6 +37,10 @@ export function WidgetOverflowMenu({
   currentStages,
   currentFilters,
   currentFiltersByObject,
+  currentText,
+  currentImageUrl,
+  currentImageFit,
+  currentCard,
   boundQuerySource,
   boundQueryMetric,
   queriedScopes,
@@ -91,6 +95,14 @@ export function WidgetOverflowMenu({
       import("@/lib/queries/ast").Filter[]
     >
   >;
+  /** Text-widget content (text widgets only). */
+  currentText?: string;
+  /** Image-widget source URL (image widgets only). */
+  currentImageUrl?: string;
+  /** Image-widget object-fit (image widgets only). */
+  currentImageFit?: "contain" | "cover";
+  /** Static widgets: whether content renders inside card chrome. */
+  currentCard?: boolean;
   /**
    * The bound query's source — feeds the filter editor's field menu so
    * a Stripe widget sees Stripe filters, a HubSpot widget sees HubSpot
@@ -120,6 +132,10 @@ export function WidgetOverflowMenu({
   // "Bind a query" / "Unbind" items so operators don't get a useless
   // single-query picker.
   const isFunnel = widgetType === "funnel";
+  // Static widgets (text / image) carry no query — hide the bind/unbind
+  // items the same way funnel does (funnel binds per-stage instead).
+  const isStatic = widgetType === "text" || widgetType === "image";
+  const showBinding = !isFunnel && !isStatic;
   // Controlled menu state — every selection (Edit / Bind / Unbind /
   // Remove) explicitly closes the dropdown. Previously we used
   // `e.preventDefault()` in onSelect to stop Radix's default close
@@ -175,7 +191,7 @@ export function WidgetOverflowMenu({
               <Icons.Edit size={14} />{" "}
               {isFunnel ? "Edit widget & stages…" : "Edit widget…"}
             </DropdownMenu.Item>
-            {!isFunnel && (
+            {showBinding && (
               <>
                 <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
                 <DropdownMenu.Item
@@ -286,6 +302,10 @@ export function WidgetOverflowMenu({
         currentStages={currentStages}
         currentFilters={currentFilters}
         currentFiltersByObject={currentFiltersByObject}
+        currentText={currentText}
+        currentImageUrl={currentImageUrl}
+        currentImageFit={currentImageFit}
+        currentCard={currentCard}
         boundQuerySource={boundQuerySource}
         boundQueryMetric={boundQueryMetric}
         queriedScopes={queriedScopes}

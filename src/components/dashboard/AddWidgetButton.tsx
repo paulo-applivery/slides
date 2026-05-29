@@ -43,6 +43,18 @@ const TYPES: Array<{
     description: "Top-N leaderboard",
     hint: "Bind a group-by query (e.g., revenue per owner).",
   },
+  {
+    type: "text",
+    label: "Text",
+    description: "Headline or note",
+    hint: "Static text — a section heading or annotation. No query needed.",
+  },
+  {
+    type: "image",
+    label: "Image",
+    description: "Logo or photo by URL",
+    hint: "Static image from a URL — a logo or banner. No query needed.",
+  },
 ];
 
 /**
@@ -319,6 +331,48 @@ function WidgetThumbnail({ type }: { type: WidgetType }) {
                 />
               </g>
             ))}
+          </svg>
+        </div>
+      );
+    case "text":
+      return (
+        <div style={box}>
+          <svg width="80" height="48" viewBox="0 0 80 48" aria-hidden="true">
+            <text
+              x="40"
+              y="20"
+              textAnchor="middle"
+              fontSize="16"
+              fontWeight="600"
+              fill="var(--primary)"
+            >
+              Aa
+            </text>
+            <rect x="16" y="30" width="48" height="4" fill="var(--text-muted)" rx="2" />
+            <rect x="24" y="38" width="32" height="4" fill="var(--text-muted)" rx="2" opacity="0.6" />
+          </svg>
+        </div>
+      );
+    case "image":
+      return (
+        <div style={box}>
+          <svg width="80" height="48" viewBox="0 0 80 48" aria-hidden="true">
+            <rect
+              x="12"
+              y="8"
+              width="56"
+              height="32"
+              fill="none"
+              stroke="var(--primary)"
+              strokeWidth="2"
+              rx="3"
+            />
+            <circle cx="26" cy="20" r="4" fill="var(--primary)" />
+            <path
+              d="M 16 36 L 32 24 L 44 32 L 56 20 L 64 28 L 64 36 Z"
+              fill="var(--primary)"
+              opacity="0.55"
+            />
           </svg>
         </div>
       );

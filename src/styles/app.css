@@ -259,6 +259,53 @@ body { min-width: 1280px; }
   overflow: hidden;
 }
 
+/* Static text widget — fluid like the chart text (scales with cell
+   height and the operator's text-size multiplier). Preserves authored
+   line breaks and wraps long lines; clips rather than overflowing. */
+.text-widget {
+  font-size: calc(clamp(15px, 7cqh, 56px) * var(--chart-text-scale, 1));
+  line-height: 1.25;
+  color: var(--text-primary);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  max-height: 100%;
+}
+
+/* Bare (card-less) widgets — text/image shown directly on the dashboard
+   surface with no panel chrome. The editor controls (drag + 3-dot) float
+   over the top-right corner instead of occupying a header row, so the
+   content fills the whole cell. */
+.widget--bare {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+.widget--bare:hover { border-color: transparent; }
+.widget--bare > .widget-head {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  left: auto;
+  width: auto;
+  padding: 2px;
+  gap: 4px;
+  border-radius: 8px;
+  background: transparent;
+  z-index: 3;
+}
+.widget--bare:hover > .widget-head {
+  background: color-mix(in srgb, var(--bg-elev-1) 72%, transparent);
+  backdrop-filter: blur(3px);
+}
+.widget--bare > .widget-body {
+  padding: 0;
+  justify-content: center;
+}
+
 /* Source pill — still exported for the overflow menu / settings UI even
    though it no longer renders in the widget header. */
 .src-pill {

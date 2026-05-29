@@ -114,6 +114,10 @@ export function EditWidgetDialog({
   currentStages,
   currentFilters,
   currentFiltersByObject,
+  currentText,
+  currentImageUrl,
+  currentImageFit,
+  currentCard,
   boundQuerySource,
   boundQueryMetric,
   queriedScopes,
@@ -142,6 +146,14 @@ export function EditWidgetDialog({
   currentFiltersByObject?: Partial<
     Record<import("@/lib/queries/catalog").SourceObject, Filter[]>
   >;
+  /** Text-widget content (text widgets only). */
+  currentText?: string;
+  /** Image-widget source URL (image widgets only). */
+  currentImageUrl?: string;
+  /** Image-widget object-fit (image widgets only). */
+  currentImageFit?: "contain" | "cover";
+  /** Static widgets: whether content renders inside card chrome. */
+  currentCard?: boolean;
   /**
    * Source/metric of the bound query. Used by the Filters tab to scope
    * the field menu (HubSpot deals vs contacts, Stripe charges). When
@@ -200,6 +212,21 @@ export function EditWidgetDialog({
   const isFunnel = widgetType === "funnel";
   const [stages, setStages] = useState<StageRow[]>(currentStages ?? []);
 
+  // Static widgets (text / image) — carry their content in the display
+  // blob, no query. They get a single "Content" tab instead of the
+  // Display / Time / Filters set.
+  const isText = widgetType === "text";
+  const isImage = widgetType === "image";
+  const isStatic = isText || isImage;
+  const [text, setText] = useState(currentText ?? "");
+  const [imageUrl, setImageUrl] = useState(currentImageUrl ?? "");
+  const [imageFit, setImageFit] = useState<"contain" | "cover">(
+    currentImageFit ?? "contain",
+  );
+  // "Show in card" — default on (in card). Stored as `card`; only `false`
+  // is persisted server-side.
+  const [card, setCard] = useState(currentCard !== false);
+
   // Per-widget filter overlay state — keyed by SourceObject so a
   // funnel widget can keep "Deal filters" and "Contact filters" in
   // separate lists, each applied to the matching stages at execute
@@ -213,7 +240,7 @@ export function EditWidgetDialog({
   >(() => seedFiltersByObject(currentFilters, currentFiltersByObject, queriedScopes));
 
   const [tab, setTab] = useState<
-    "display" | "time" | "filters" | "stages"
+    "display" | "time" | "filters" | "stages" | "content"
   >("display");
   const [saving, startSave] = useTransition();
 
@@ -244,7 +271,12 @@ export function EditWidgetDialog({
       seedFiltersByObject(currentFilters, currentFiltersByObject, queriedScopes),
     );
 
-    setTab("display");
+    setText(currentText ?? "");
+    setImageUrl(currentImageUrl ?? "");
+    setImageFit(currentImageFit ?? "contain");
+    setCard(currentCard !== false);
+
+    setTab(isStatic ? "content" : "display");
   }, [
     open,
     currentTitle,
@@ -258,14 +290,23 @@ export function EditWidgetDialog({
     currentFilters,
     currentFiltersByObject,
     queriedScopes,
+    currentText,
+    currentImageUrl,
+    currentImageFit,
+    currentCard,
+    isStatic,
   ]);
 
   function save() {
     startSave(async () => {
       try {
         await updateWidgetDisplay(dashboardId, widgetId, {
-          title: title.trim(),
-          titleSize: autoSize ? null : size,
+          // Static widgets carry no header title or chip — clear both so
+          // a leftover value from a prior type can't render a stray
+          // header row. The body text-size + alignment still apply
+          // (text widgets reuse `textScale` / `titleAlign`).
+          title: isStatic ? null : title.trim(),
+          titleSize: isStatic ? null : autoSize ? null : size,
           // The server drops the key when the value is 1× — keeps the
           // saved display blob minimal for the common case.
           textScale,
@@ -273,8 +314,9 @@ export function EditWidgetDialog({
           // ("left"). Sending `null` for left keeps the saved display blob
           // small for the common case.
           titleAlign: align === "left" ? null : align,
-          chip:
-            chipEnabled && chipText.trim()
+          chip: isStatic
+            ? null
+            : chipEnabled && chipText.trim()
               ? {
                   text: chipText.trim(),
                   icon: chipIcon ?? null,
@@ -282,6 +324,13 @@ export function EditWidgetDialog({
                   size: chipAutoSize ? null : chipSize,
                 }
               : null,
+          // Static-widget content. For non-static types we leave these
+          // untouched (undefined) so the server preserves whatever's
+          // stored. Image widgets clear `text` and vice-versa.
+          text: isText ? text : isImage ? null : undefined,
+          imageUrl: isImage ? imageUrl : isText ? null : undefined,
+          imageFit: isImage ? imageFit : isText ? null : undefined,
+          card: isStatic ? (card ? null : false) : undefined,
           timePeriod: timePeriodEnabled && timePeriod ? timePeriod : null,
           // Target is meaningful for gauges (fills the dial) and for
           // SingleValue tiles (anchor for the query's conditionalColors).
@@ -380,7 +429,9 @@ export function EditWidgetDialog({
             </Dialog.Close>
           </div>
 
-          {/* Top-level tabs */}
+          {/* Top-level tabs. Static widgets (text / image) carry no query
+              or time window, so they get a single "Content" tab instead
+              of the Display / Time period / Filters set. */}
           <div
             role="tablist"
             style={{
@@ -389,19 +440,27 @@ export function EditWidgetDialog({
               marginBottom: 18,
             }}
           >
-            <TabButton active={tab === "display"} onClick={() => setTab("display")}>
-              Display
-            </TabButton>
-            <TabButton active={tab === "time"} onClick={() => setTab("time")}>
-              Time period
-            </TabButton>
-            <TabButton active={tab === "filters"} onClick={() => setTab("filters")}>
-              Filters
-            </TabButton>
-            {isFunnel && (
-              <TabButton active={tab === "stages"} onClick={() => setTab("stages")}>
-                Funnel stages
+            {isStatic ? (
+              <TabButton active={tab === "content"} onClick={() => setTab("content")}>
+                Content
               </TabButton>
+            ) : (
+              <>
+                <TabButton active={tab === "display"} onClick={() => setTab("display")}>
+                  Display
+                </TabButton>
+                <TabButton active={tab === "time"} onClick={() => setTab("time")}>
+                  Time period
+                </TabButton>
+                <TabButton active={tab === "filters"} onClick={() => setTab("filters")}>
+                  Filters
+                </TabButton>
+                {isFunnel && (
+                  <TabButton active={tab === "stages"} onClick={() => setTab("stages")}>
+                    Funnel stages
+                  </TabButton>
+                )}
+              </>
             )}
           </div>
 
@@ -436,6 +495,24 @@ export function EditWidgetDialog({
               setTargetEnabled={setTargetEnabled}
               target={target}
               setTarget={setTarget}
+            />
+          )}
+
+          {tab === "content" && isStatic && (
+            <StaticContentTab
+              isText={isText}
+              text={text}
+              setText={setText}
+              imageUrl={imageUrl}
+              setImageUrl={setImageUrl}
+              imageFit={imageFit}
+              setImageFit={setImageFit}
+              align={align}
+              setAlign={setAlign}
+              textScale={textScale}
+              setTextScale={setTextScale}
+              card={card}
+              setCard={setCard}
             />
           )}
 
@@ -955,6 +1032,190 @@ function DisplayTab(props: {
           )}
         </span>
         {previewChip ? <PreviewChip chip={previewChip} /> : null}
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Content tab — static text / image widgets.
+//
+// Text widgets edit a body string + alignment + text size; image widgets
+// edit a source URL + object-fit. Both share the "Show in card" toggle
+// that flips the widget between framed (card chrome) and bare (sitting
+// directly on the dashboard surface).
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StaticContentTab(props: {
+  isText: boolean;
+  text: string;
+  setText: (v: string) => void;
+  imageUrl: string;
+  setImageUrl: (v: string) => void;
+  imageFit: "contain" | "cover";
+  setImageFit: (v: "contain" | "cover") => void;
+  align: "left" | "center" | "right";
+  setAlign: (v: "left" | "center" | "right") => void;
+  textScale: number;
+  setTextScale: (v: number) => void;
+  card: boolean;
+  setCard: (v: boolean) => void;
+}) {
+  const {
+    isText,
+    text,
+    setText,
+    imageUrl,
+    setImageUrl,
+    imageFit,
+    setImageFit,
+    align,
+    setAlign,
+    textScale,
+    setTextScale,
+    card,
+    setCard,
+  } = props;
+
+  // Only http(s) absolute and root-relative URLs render; flag anything
+  // else so the operator knows it won't be saved (the server drops it).
+  const trimmedUrl = imageUrl.trim();
+  const urlValid =
+    !trimmedUrl ||
+    /^https?:\/\//i.test(trimmedUrl) ||
+    (trimmedUrl.startsWith("/") && !trimmedUrl.startsWith("//"));
+
+  return (
+    <>
+      {isText ? (
+        <>
+          <SectionLabel>Text</SectionLabel>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Section heading or a short note…"
+            maxLength={2000}
+            rows={4}
+            autoFocus
+            style={{
+              ...textInputStyle,
+              resize: "vertical",
+              minHeight: 96,
+              lineHeight: 1.5,
+              fontFamily: "inherit",
+            }}
+          />
+
+          <SectionLabel style={{ marginTop: 18 }}>Alignment</SectionLabel>
+          <Segmented
+            options={[
+              { value: "left", label: "Left" },
+              { value: "center", label: "Center" },
+              { value: "right", label: "Right" },
+            ]}
+            value={align}
+            onChange={(v) => setAlign(v as "left" | "center" | "right")}
+          />
+
+          <SectionLabel style={{ marginTop: 18 }}>Text size</SectionLabel>
+          <Segmented
+            options={TEXT_SCALE_PRESETS.map((p) => ({
+              value: String(p.value),
+              label: p.label,
+            }))}
+            value={String(
+              TEXT_SCALE_PRESETS.find(
+                (p) => Math.abs(textScale - p.value) < 0.001,
+              )?.value ?? textScale,
+            )}
+            onChange={(v) => setTextScale(Number(v))}
+          />
+        </>
+      ) : (
+        <>
+          <SectionLabel>Image URL</SectionLabel>
+          <input
+            type="url"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            placeholder="https://example.com/logo.png"
+            maxLength={2000}
+            autoFocus
+            style={{
+              ...textInputStyle,
+              borderColor: urlValid ? "var(--border)" : "var(--danger)",
+            }}
+          />
+          {!urlValid && (
+            <p
+              className="t-small"
+              style={{ marginTop: 6, color: "var(--danger)" }}
+            >
+              Only http(s) links or root-relative paths (starting with “/”)
+              are allowed. This URL won&apos;t be saved.
+            </p>
+          )}
+
+          <SectionLabel style={{ marginTop: 18 }}>Fit</SectionLabel>
+          <Segmented
+            options={[
+              { value: "contain", label: "Contain" },
+              { value: "cover", label: "Cover" },
+            ]}
+            value={imageFit}
+            onChange={(v) => setImageFit(v as "contain" | "cover")}
+          />
+          <p className="t-small" style={{ marginTop: 6, color: "var(--text-muted)" }}>
+            {imageFit === "contain"
+              ? "The whole image fits inside the widget — may leave empty space."
+              : "The image fills the widget, cropping the overflow."}
+          </p>
+
+          {trimmedUrl && urlValid && (
+            <div
+              style={{
+                marginTop: 18,
+                height: 160,
+                background: "var(--bg-elev-2)",
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={trimmedUrl}
+                alt="Preview"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: imageFit,
+                  display: "block",
+                }}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      <div
+        style={{
+          marginTop: 22,
+          paddingTop: 18,
+          borderTop: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div>
+          <SectionLabel style={{ marginBottom: 2 }}>Show in card</SectionLabel>
+          <p className="t-small" style={{ margin: 0, color: "var(--text-muted)" }}>
+            Off renders the content directly on the dashboard surface — no
+            background, border, or shadow.
+          </p>
+        </div>
+        <Checkbox checked={card} onChange={setCard} label={card ? "In card" : "Bare"} />
       </div>
     </>
   );
@@ -1683,6 +1944,61 @@ function Checkbox({
       />
       {label}
     </label>
+  );
+}
+
+/**
+ * Inline segmented control — a row of pill buttons where exactly one is
+ * active. Used by the static-content tab for alignment / text-size / fit.
+ */
+function Segmented({
+  options,
+  value,
+  onChange,
+}: {
+  options: ReadonlyArray<{ value: string; label: string }>;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      style={{
+        display: "inline-flex",
+        background: "var(--bg-elev-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 10,
+        padding: 2,
+        gap: 2,
+      }}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: "8px 14px",
+              background: active ? "var(--bg)" : "transparent",
+              border: "1px solid",
+              borderColor: active ? "var(--border-strong)" : "transparent",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: active ? 500 : 400,
+              color: active ? "var(--text-primary)" : "var(--text-secondary)",
+              cursor: "pointer",
+              minWidth: 64,
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

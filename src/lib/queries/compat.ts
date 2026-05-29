@@ -20,15 +20,23 @@ export type WidgetType =
   | "gauge"
   | "bar"
   | "funnel"
-  | "ranking";
+  | "ranking"
+  | "text"
+  | "image";
 
-/** Which executor kinds a widget can consume. */
+/**
+ * Which executor kinds a widget can consume. Text and Image are *static*
+ * widgets — their content lives in the display blob, not a saved query —
+ * so they accept nothing and never run the executor.
+ */
 export const WIDGET_ACCEPTS: Record<WidgetType, QueryKind[]> = {
   singleValue: ["single"],
   gauge: ["single"],
   bar: ["timeseries"],
   funnel: [],
   ranking: ["groupby"],
+  text: [],
+  image: [],
 };
 
 export function isCompatible(widget: WidgetType, kind: QueryKind): boolean {

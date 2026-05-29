@@ -70,6 +70,18 @@ export const Icons = {
       <rect x="3" y="16" width="7" height="5" rx="1.5" />
     </Icon>
   ),
+  Image: (p: IconComponentProps) => (
+    <Icon {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <circle cx="8.5" cy="8.5" r="1.6" />
+      <path d="m21 15-5-5L5 21" />
+    </Icon>
+  ),
+  Text: (p: IconComponentProps) => (
+    <Icon {...p}>
+      <path d="M4 6V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v1M12 4v16M9 20h6" />
+    </Icon>
+  ),
   Slideshow: (p: IconComponentProps) => (
     <Icon {...p}>
       <rect x="3" y="4" width="18" height="13" rx="2" />

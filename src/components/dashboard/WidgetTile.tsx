@@ -18,8 +18,10 @@ import {
   BarChart,
   FunnelChart,
   GaugeChart,
+  ImageWidget,
   RankingWidget,
   SingleValue,
+  TextWidget,
   WidgetShell,
 } from "@/components/widgets";
 import { SEED, type Kpi } from "@/lib/seed";
@@ -107,6 +109,18 @@ type WidgetDisplay = {
       import("@/lib/queries/ast").Filter[]
     >
   >;
+  /** Text-widget content (the block of text to render). */
+  text?: string;
+  /** Image-widget source URL. */
+  imageUrl?: string;
+  /** Image-widget object-fit. Defaults to "contain". */
+  imageFit?: "contain" | "cover";
+  /**
+   * Static widgets (text / image): whether to wrap the content in the
+   * standard card chrome. `false` renders it bare on the dashboard
+   * surface. Defaults to `true` (card shown) when unset.
+   */
+  card?: boolean;
 };
 
 /**
@@ -143,6 +157,12 @@ export async function WidgetTile({
         editable={editable}
       />
     );
+  }
+
+  // Text / Image are static widgets — no query binding, content lives in
+  // the display blob. Render directly (with optional card chrome).
+  if (widget.type === "text" || widget.type === "image") {
+    return <StaticTile dashboardId={dashboardId} widget={widget} display={display} editable={editable} />;
   }
 
   const bound = widget.queryId
@@ -300,6 +320,10 @@ function humanType(t: WidgetType): string {
       return "Funnel";
     case "ranking":
       return "Ranking";
+    case "text":
+      return "Text";
+    case "image":
+      return "Image";
   }
 }
 
@@ -363,6 +387,11 @@ function renderBound(
     case "funnel":
       // No funnel kind in the executor yet — fall through to SEED.
       return renderSeedFallback(widget, display);
+    case "text":
+    case "image":
+      // Static widgets never reach renderBound (short-circuited in
+      // WidgetTile). Guard for switch exhaustiveness.
+      return null;
   }
 }
 
@@ -406,6 +435,9 @@ function renderSeedFallback(widget: Widget, display: WidgetDisplay) {
       return <FunnelChart stages={[...SEED.funnel]} />;
     case "ranking":
       return <RankingWidget reps={[...SEED.reps]} />;
+    case "text":
+    case "image":
+      return null;
   }
 }
 
@@ -629,6 +661,65 @@ async function FunnelTile({
       }
     >
       <FunnelChart stages={stagesForChart} />
+    </WidgetShell>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Static widgets — Text / Image. No query, content from the display blob.
+// `display.card !== false` keeps the standard panel chrome; `card: false`
+// renders the content bare on the dashboard surface.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function StaticTile({
+  dashboardId,
+  widget,
+  display,
+  editable,
+}: {
+  dashboardId: string;
+  widget: Widget;
+  display: WidgetDisplay;
+  editable: boolean;
+}) {
+  const inCard = display.card !== false;
+  const resolvedTitle = resolveTitle(display, widget.type, undefined);
+  return (
+    <WidgetShell
+      title={resolvedTitle}
+      bare={!inCard}
+      hideTitle
+      textScale={display.textScale}
+      titleAlign={display.titleAlign}
+      dragHandle={editable}
+      action={
+        editable ? (
+          <WidgetOverflowMenu
+            dashboardId={dashboardId}
+            widgetId={widget.id}
+            widgetType={widget.type}
+            widgetName={resolvedTitle}
+            hasBinding={false}
+            currentTitle={display.title ?? resolvedTitle}
+            currentTextScale={display.textScale}
+            currentTitleAlign={display.titleAlign}
+            currentText={display.text}
+            currentImageUrl={display.imageUrl}
+            currentImageFit={display.imageFit}
+            currentCard={display.card}
+          />
+        ) : undefined
+      }
+    >
+      {widget.type === "text" ? (
+        <TextWidget text={display.text ?? ""} align={display.titleAlign} />
+      ) : (
+        <ImageWidget
+          src={display.imageUrl}
+          fit={display.imageFit}
+          alt={display.title}
+        />
+      )}
     </WidgetShell>
   );
 }

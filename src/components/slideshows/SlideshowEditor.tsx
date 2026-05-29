@@ -13,7 +13,7 @@ import {
   updateSlideAppearance,
   updateSlideUrl,
 } from "@/lib/slideshows";
-import type { Slide, SlideTransition } from "@/lib/db/schema";
+import type { DashboardLayout, Slide, SlideTransition } from "@/lib/db/schema";
 import {
   DEFAULT_SLIDE_APPEARANCE,
   type BackgroundEffect,
@@ -51,6 +51,18 @@ async function guard(fn: () => Promise<void>, errorTitle: string) {
 
 const TRANSITIONS: SlideTransition[] = ["crossfade", "slide", "cut"];
 
+/**
+ * Dashboard reference passed to the editor. Carries `layout` so we can
+ * render a wireframe thumbnail of the widget grid, and `theme` so the
+ * thumbnail's backdrop matches how the dashboard will actually appear.
+ */
+export type DashboardRef = {
+  id: string;
+  name: string;
+  layout: DashboardLayout | null;
+  theme: "light" | "dark";
+};
+
 export function SlideshowEditor({
   slideshowId,
   initialSlides,
@@ -58,7 +70,7 @@ export function SlideshowEditor({
 }: {
   slideshowId: string;
   initialSlides: Slide[];
-  dashboards: Array<{ id: string; name: string }>;
+  dashboards: DashboardRef[];
 }) {
   // Derive directly from the prop — every mutation goes through a server
   // action that calls `revalidatePath`, which re-renders the page server
@@ -118,10 +130,16 @@ export function SlideshowEditor({
                   className="ss-slide-thumb"
                   style={{
                     background: `linear-gradient(135deg, ${typeAccent(s.type)}33, transparent)`,
+                    overflow: "hidden",
                   }}
                 >
                   {s.type === "dashboard" ? (
-                    <Icons.Dashboard size={20} variant="bold" />
+                    <DashboardMiniPreview
+                      dashboard={dashboards.find(
+                        (d) => d.id === s.dashboardId,
+                      )}
+                      compact
+                    />
                   ) : s.type === "youtube" ? (
                     <Icons.Youtube size={20} style={{ color: "#FF0033" }} />
                   ) : (
@@ -224,7 +242,7 @@ export function SlideshowEditor({
               </div>
 
               <div className="ss-preview">
-                <SlideThumb slide={selected} />
+                <SlideThumb slide={selected} dashboards={dashboards} />
               </div>
 
               <div className="ss-config">
@@ -481,10 +499,7 @@ function SlideAppearanceControls({
   );
 }
 
-function slideLabel(
-  slide: Slide,
-  dashboards: Array<{ id: string; name: string }>,
-) {
+function slideLabel(slide: Slide, dashboards: DashboardRef[]) {
   if (slide.type === "dashboard") {
     return (
       dashboards.find((d) => d.id === slide.dashboardId)?.name ??
@@ -507,7 +522,32 @@ function typeAccent(t: Slide["type"]): string {
       : "var(--success)";
 }
 
-function SlideThumb({ slide }: { slide: Slide }) {
+function SlideThumb({
+  slide,
+  dashboards,
+}: {
+  slide: Slide;
+  dashboards: DashboardRef[];
+}) {
+  // Dashboard slides get a full wireframe of their widget grid so the
+  // operator recognises *which* board this slide shows at a glance.
+  if (slide.type === "dashboard") {
+    const dashboard = dashboards.find((d) => d.id === slide.dashboardId);
+    return (
+      <div className="prev-shell">
+        <div className="prev-dash-meta">
+          <span className="t-micro">{humanType(slide.type)}</span>
+          <span className="t-micro" style={{ color: "var(--success)" }}>
+            ● LIVE
+          </span>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, padding: 12 }}>
+          <DashboardMiniPreview dashboard={dashboard} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="prev-shell">
       <div className="prev-dash-meta">
@@ -525,14 +565,7 @@ function SlideThumb({ slide }: { slide: Slide }) {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          {slide.type === "dashboard" ? (
-            <>
-              <Icons.Dashboard size={36} />
-              <div className="t-small" style={{ marginTop: 8 }}>
-                Live dashboard preview · opens in TV mode
-              </div>
-            </>
-          ) : slide.type === "youtube" ? (
+          {slide.type === "youtube" ? (
             <>
               <Icons.Youtube size={36} style={{ color: "#FF0033" }} />
               <div className="t-small" style={{ marginTop: 8 }}>
@@ -564,6 +597,116 @@ function SlideThumb({ slide }: { slide: Slide }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Per-widget-type accent for the wireframe tiles. Kept distinct enough
+ * that an operator can tell a gauge board from a funnel board at thumb
+ * size without reading any labels.
+ */
+const WIDGET_TINT: Record<DashboardLayout["widgets"][number]["type"], string> = {
+  gauge: "var(--primary)",
+  bar: "#22C55E",
+  funnel: "#8B5CF6",
+  ranking: "#F59E0B",
+  singleValue: "#0EA5E9",
+  text: "var(--text-tertiary)",
+  image: "#14B8A6",
+};
+
+/**
+ * Wireframe thumbnail of a dashboard's widget grid. Renders each widget
+ * as a tinted tile positioned in a 12-column grid (the same column count
+ * the real canvas uses), normalised so the whole layout fits a 16:9 box.
+ * No queries run — it's a structural preview, so it's cheap enough to
+ * render once per slide in the list plus the large preview pane.
+ */
+function DashboardMiniPreview({
+  dashboard,
+  compact = false,
+}: {
+  dashboard: DashboardRef | undefined;
+  compact?: boolean;
+}) {
+  const widgets = dashboard?.layout?.widgets ?? [];
+  const isLight = dashboard?.theme === "light";
+  const surface = isLight ? "#F4F6FB" : "#0B1020";
+
+  // Missing dashboard (deleted after the slide was added) or an empty
+  // board → fall back to the plain dashboard glyph rather than an empty
+  // rectangle, so the slide still reads as "a dashboard".
+  if (!dashboard || widgets.length === 0) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          minHeight: compact ? undefined : 120,
+          borderRadius: compact ? 6 : 12,
+          background: surface,
+          display: "grid",
+          placeItems: "center",
+          color: "var(--text-tertiary)",
+        }}
+      >
+        <Icons.Dashboard size={compact ? 18 : 32} />
+      </div>
+    );
+  }
+
+  const COLS = 12;
+  const rows = Math.max(
+    1,
+    ...widgets.map((w) => w.pos.y + Math.max(1, w.pos.h)),
+  );
+  // Tile inset (as a % of a cell) so adjacent widgets read as separate
+  // cards. Smaller in compact mode where every pixel counts.
+  const gap = compact ? 3 : 5;
+
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        aspectRatio: compact ? undefined : "16 / 9",
+        borderRadius: compact ? 6 : 12,
+        background: surface,
+        overflow: "hidden",
+      }}
+    >
+      {widgets.map((w) => {
+        const tint = WIDGET_TINT[w.type] ?? "var(--primary)";
+        const cw = Math.max(1, w.pos.w);
+        const ch = Math.max(1, w.pos.h);
+        return (
+          <div
+            key={w.id}
+            title={humanWidgetType(w.type)}
+            style={{
+              position: "absolute",
+              left: `calc(${(w.pos.x / COLS) * 100}% + ${gap}px)`,
+              top: `calc(${(w.pos.y / rows) * 100}% + ${gap}px)`,
+              width: `calc(${(cw / COLS) * 100}% - ${gap * 2}px)`,
+              height: `calc(${(ch / rows) * 100}% - ${gap * 2}px)`,
+              borderRadius: compact ? 2 : 4,
+              background: `color-mix(in srgb, ${tint} 26%, ${surface})`,
+              border: `1px solid color-mix(in srgb, ${tint} 55%, transparent)`,
+              boxSizing: "border-box",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function humanWidgetType(
+  t: DashboardLayout["widgets"][number]["type"],
+): string {
+  return t === "singleValue"
+    ? "Single value"
+    : t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 /**
@@ -641,7 +784,7 @@ function AddSlideDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   slideshowId: string;
-  dashboards: Array<{ id: string; name: string }>;
+  dashboards: DashboardRef[];
 }) {
   const [kind, setKind] = useState<SlideKind>("dashboard");
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -808,16 +951,15 @@ function AddSlideDialog({
                   >
                     <span
                       style={{
-                        width: 32,
-                        height: 32,
+                        width: 64,
+                        height: 40,
                         borderRadius: 8,
-                        background: "var(--primary-soft)",
-                        color: "var(--primary)",
-                        display: "grid",
-                        placeItems: "center",
+                        overflow: "hidden",
+                        border: "1px solid var(--border)",
+                        flexShrink: 0,
                       }}
                     >
-                      <Icons.Dashboard size={16} variant="bold" />
+                      <DashboardMiniPreview dashboard={d} compact />
                     </span>
                     <span
                       style={{
