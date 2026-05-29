@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@/auth";
@@ -30,6 +31,12 @@ export default async function SlideshowEditPage({
 
   const slideshow = await getSlideshow(params.id);
   if (!slideshow) notFound();
+
+  // Real request host for the advertised TV URL — so it reads
+  // `localhost:3000/t/…` in dev and the actual domain in prod instead
+  // of a hardcoded guess. Falls back to the production host when the
+  // header is somehow absent (e.g. certain edge runtimes).
+  const tvHost = headers().get("host") ?? "app.applivery.com";
 
   // Dashboards available for the "add slide" picker. We pull `layout`
   // and `theme` too so the editor can render a wireframe thumbnail of
@@ -77,6 +84,7 @@ export default async function SlideshowEditPage({
         slideshowId={slideshow.id}
         initialSlides={slideshow.slides}
         dashboards={workspaceDashboards}
+        tvHost={tvHost}
       />
     </>
   );

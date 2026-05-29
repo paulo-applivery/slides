@@ -67,10 +67,13 @@ export function SlideshowEditor({
   slideshowId,
   initialSlides,
   dashboards,
+  tvHost,
 }: {
   slideshowId: string;
   initialSlides: Slide[];
   dashboards: DashboardRef[];
+  /** Request host for the advertised TV URL (e.g. "localhost:3000"). */
+  tvHost: string;
 }) {
   // Derive directly from the prop — every mutation goes through a server
   // action that calls `revalidatePath`, which re-renders the page server
@@ -345,7 +348,7 @@ export function SlideshowEditor({
                   <span className="t-small">
                     TV URL ·{" "}
                     <code className="t-mono ss-url">
-                      app.applivery.com/t/{slideshowId.slice(0, 8)}
+                      {tvHost}/t/{slideshowId.slice(0, 8)}
                     </code>
                   </span>
                 </div>
