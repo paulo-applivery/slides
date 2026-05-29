@@ -558,14 +558,16 @@ export function EditWidgetDialog({
 /**
  * Chart text-size presets. We expose discrete steps rather than a free
  * slider because the underlying value is a *multiplier* on the chart's
- * fluid `clamp()` sizing — operators think "a bit bigger", not "1.2×".
- * `1` is the design default and persists as "no override".
+ * fluid `clamp()` sizing — operators think "a bit bigger", not "1.3×".
+ * Bumped 30% across the board because the prior baseline read too small
+ * on TV layouts; "Default" now sits at 1.3 so even the unscaled choice
+ * is comfortably legible.
  */
 const TEXT_SCALE_PRESETS: ReadonlyArray<{ label: string; value: number }> = [
-  { label: "Small", value: 0.85 },
-  { label: "Default", value: 1 },
-  { label: "Large", value: 1.2 },
-  { label: "X-Large", value: 1.45 },
+  { label: "Small", value: 1.1 },
+  { label: "Default", value: 1.3 },
+  { label: "Large", value: 1.55 },
+  { label: "X-Large", value: 1.9 },
 ];
 
 function DisplayTab(props: {
