@@ -72,6 +72,30 @@ export function TVMode({
     setActivations((m) => ({ ...m, [id]: (m[id] ?? 0) + 1 }));
   }, [idx, slides]);
 
+  // Lazy slide window — only the active slide and the one currently fading
+  // out actually render their content (charts, SVGs, and crucially the
+  // YouTube/URL iframes). Without this every slide stays live from page
+  // load: N dashboards painting + every video buffering at once, which is
+  // what bogs down weak TV hardware. The lightweight `.tv-slide` wrapper
+  // divs stay mounted for all slides so the CSS crossfade is unchanged —
+  // only the heavy children are gated. The outgoing slide is kept live
+  // until the crossfade finishes, then pruned (invisible at opacity 0 by
+  // then, so unmounting it never flashes).
+  const [liveIndices, setLiveIndices] = useState<Set<number>>(
+    () => new Set(slides[0] ? [0] : []),
+  );
+  useEffect(() => {
+    setLiveIndices((prev) => {
+      if (prev.has(idx)) return prev;
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
+    // 800ms crossfade (see `.tv-slide` transition in screens.css) + buffer.
+    const t = setTimeout(() => setLiveIndices(new Set([idx])), 850);
+    return () => clearTimeout(t);
+  }, [idx]);
+
   // Resolve the active slide's effective appearance:
   //   - theme follows the bound dashboard (dashboard slides); media slides
   //     (youtube / url) fall back to dark.
@@ -225,13 +249,17 @@ export function TVMode({
               data-transition={s.transition}
               className={`${fullbleed ? "tv-slide-fullbleed" : "tv-slide"} ${active ? "is-active" : ""}`}
             >
-              <SlideContent
-                key={contentKey}
-                slide={s}
-                dashboard={
-                  s.type === "dashboard" ? dashboardsById[s.dashboardId] : undefined
-                }
-              />
+              {liveIndices.has(i) && (
+                <SlideContent
+                  key={contentKey}
+                  slide={s}
+                  dashboard={
+                    s.type === "dashboard"
+                      ? dashboardsById[s.dashboardId]
+                      : undefined
+                  }
+                />
+              )}
             </div>
           );
         })}
