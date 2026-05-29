@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { Icons } from "@/components/ui/Icon";
-import { parseYoutubeId, youtubeEmbedUrl } from "@/lib/tv/slides";
+import { parseYoutubeId } from "@/lib/tv/slides";
+import { loadYouTubeApi, type YTPlayer } from "@/lib/tv/youtube";
 import type { DashboardLayout, Slide } from "@/lib/db/schema";
 import type { TvWidgetResult } from "@/app/api/tv/data/route";
 import {
@@ -474,9 +475,84 @@ function SlideContent({
   return null;
 }
 
+/**
+ * YouTube slide driven through the IFrame Player API rather than a bare
+ * `<iframe src=…autoplay=1>`. The API's explicit `playVideo()` on `onReady`
+ * is what makes muted autoplay actually fire on TV / kiosk browsers, which
+ * otherwise leave the embed a black frame. `onError` flips to a readable
+ * message (e.g. the owner disabled embedding) instead of a silent black.
+ */
 function YouTubeSlide({ url }: { url: string }) {
   const videoId = parseYoutubeId(url);
-  if (!videoId) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!videoId || !host) return;
+    let cancelled = false;
+    let player: YTPlayer | null = null;
+    let mount: HTMLDivElement | null = null;
+
+    loadYouTubeApi().then((YT) => {
+      if (cancelled) return;
+      // YT.Player replaces the element we hand it with the generated iframe.
+      // Give it a throwaway child (not the React-owned host) so React's
+      // unmount and the API's teardown don't fight over the same node.
+      // Append it only *after* the cancelled check so StrictMode's
+      // double-invoke can't leave an orphaned div that shoves the real
+      // iframe off-screen.
+      mount = document.createElement("div");
+      mount.style.width = "100%";
+      mount.style.height = "100%";
+      host.appendChild(mount);
+      player = new YT.Player(mount, {
+        videoId,
+        playerVars: {
+          autoplay: 1,
+          mute: 1,
+          controls: 0,
+          loop: 1,
+          playlist: videoId, // required for loop=1 on a single video
+          modestbranding: 1,
+          rel: 0,
+          playsinline: 1,
+        },
+        events: {
+          onReady: (e) => {
+            // Belt-and-braces: mute (autoplay policy) then kick playback.
+            e.target.mute();
+            e.target.playVideo();
+            const f = e.target.getIframe();
+            f.style.width = "100%";
+            f.style.height = "100%";
+            f.style.border = "0";
+            f.style.display = "block";
+          },
+          onError: () => {
+            if (!cancelled) setErrored(true);
+          },
+        },
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      try {
+        player?.destroy();
+      } catch {
+        // Player may not have initialized yet; nothing to tear down.
+      }
+      // Remove the mount/iframe node so StrictMode's re-run starts clean.
+      try {
+        mount?.remove();
+      } catch {
+        // Already detached by the API teardown.
+      }
+    };
+  }, [videoId]);
+
+  if (!videoId || errored) {
     return (
       <div
         className="tv-layout-gauge"
@@ -486,38 +562,31 @@ function YouTubeSlide({ url }: { url: string }) {
           className="t-body"
           style={{ color: "var(--text-tertiary)", textAlign: "center" }}
         >
-          Couldn&rsquo;t resolve a YouTube video from{" "}
-          <span className="t-mono">{url}</span>
+          {!videoId ? (
+            <>
+              Couldn&rsquo;t resolve a YouTube video from{" "}
+              <span className="t-mono">{url}</span>
+            </>
+          ) : (
+            "This video can't be played here — its owner may have disabled embedding."
+          )}
         </p>
       </div>
     );
   }
+
   return (
     <div
+      ref={hostRef}
       style={{
         position: "absolute",
         inset: 0,
-        display: "grid",
-        placeItems: "center",
+        display: "block",
         background: "#000",
         borderRadius: "var(--radius-2xl)",
         overflow: "hidden",
       }}
-    >
-      <iframe
-        title="YouTube slide"
-        src={youtubeEmbedUrl(videoId)}
-        allow="autoplay; encrypted-media; picture-in-picture"
-        // YouTube serves an `X-Frame-Options: SAMEORIGIN` for /watch but
-        // /embed/ is intentionally embeddable. No fallback needed.
-        style={{
-          width: "100%",
-          height: "100%",
-          border: 0,
-          display: "block",
-        }}
-      />
-    </div>
+    />
   );
 }
 

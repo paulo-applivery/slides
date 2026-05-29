@@ -55,21 +55,3 @@ export function validateExternalUrl(raw: string): { ok: true; url: string } | { 
   }
   return { ok: true, url: url.toString() };
 }
-
-/**
- * Build the YouTube embed URL with the right query params for an unattended
- * TV: autoplay on, sound off, loop, no controls / branding.
- */
-export function youtubeEmbedUrl(videoId: string): string {
-  const params = new URLSearchParams({
-    autoplay: "1",
-    mute: "1",
-    controls: "0",
-    loop: "1",
-    playlist: videoId, // required for `loop=1` to work
-    modestbranding: "1",
-    rel: "0",
-    playsinline: "1",
-  });
-  return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
-}
