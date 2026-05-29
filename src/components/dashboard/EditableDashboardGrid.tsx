@@ -48,6 +48,18 @@ export function EditableDashboardGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardId, widgetIds]);
 
+  // On phones the pixel-based drag grid is unusable, so we render a simple
+  // stacked, non-draggable column instead. Matches the shell's 860px
+  // breakpoint. Defaults to false for SSR; resolves after mount.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 860px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
   // Auto-measure the container so we can hand a real pixel width to RGL.
   const { width, containerRef, mounted } = useContainerWidth({
     initialWidth: 1200,
@@ -119,7 +131,20 @@ export function EditableDashboardGrid({
 
   return (
     <div ref={containerRef as React.RefObject<HTMLDivElement>} className="dash-rgl-wrap">
-      {mounted && width > 0 ? (
+      {isMobile ? (
+        <div className="dash-mobile-stack">
+          {layout.map((it) => {
+            const child = childrenById.get(it.i);
+            if (!child) return null;
+            // Preserve relative sizing: taller widgets get more height.
+            return (
+              <div key={it.i} style={{ height: Math.max(170, it.h * 60) }}>
+                {child}
+              </div>
+            );
+          })}
+        </div>
+      ) : mounted && width > 0 ? (
         <GridLayout
           className="dash-rgl"
           width={width}

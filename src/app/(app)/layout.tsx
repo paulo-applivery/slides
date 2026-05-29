@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { DataSourcesFooter } from "@/components/shell/DataSourcesFooter";
+import { NavBackdrop } from "@/components/shell/NavBackdrop";
 
 /**
  * The `(app)` route group is the authenticated shell — sidebar always
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="app">
       <Sidebar footer={<DataSourcesFooter />} />
+      <NavBackdrop />
       {children}
     </div>
   );

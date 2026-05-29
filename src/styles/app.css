@@ -531,3 +531,83 @@ body:has([data-bg-effect]) { background: transparent; }
 
 /* Don't show RGL's "static" handle on items the library auto-marks. */
 .dash-rgl .react-grid-item.static .react-resizable-handle { display: none; }
+
+/* =============================================================
+   RESPONSIVE / MOBILE  (≤ 860px)
+   The shell is desktop-first. Below this width we collapse the
+   fixed sidebar into an off-canvas drawer (toggled by the topbar
+   hamburger) and stack the dashboard into a single scrollable
+   column so every widget stays readable.
+   ============================================================= */
+
+/* Hamburger + backdrop are desktop-hidden by default. */
+.mobile-menu-btn { display: none; }
+.nav-backdrop { display: none; }
+
+@media (max-width: 860px) {
+  html, body { min-width: 0; overflow-x: hidden; }
+
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--header-h) 1fr;
+    min-width: 0;
+    height: 100dvh;
+  }
+
+  /* Topbar + main occupy the single column. */
+  .tb { grid-column: 1; padding: 0 12px; gap: 8px; }
+  .main { grid-column: 1; padding: 16px; }
+
+  /* Sidebar → off-canvas drawer. */
+  .sb {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: min(82vw, 300px);
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 240ms ease;
+    z-index: 60;
+    box-shadow: var(--shadow-lg);
+  }
+  .app.nav-open .sb { transform: none; }
+
+  /* Dim backdrop while the drawer is open (child of .app → stacks
+     between main and the drawer). */
+  .nav-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0; pointer-events: none;
+    transition: opacity 240ms ease;
+    z-index: 55;
+  }
+  .app.nav-open .nav-backdrop { opacity: 1; pointer-events: auto; }
+
+  .mobile-menu-btn { display: inline-flex; }
+
+  /* ---- Dashboard: stack into one scrollable column ---- */
+  .dash-meta { margin-bottom: 12px; }
+
+  /* Read-only CSS grid sets a 12-col layout + overflow:hidden via inline
+     styles; override to a flowing column. Definite child heights keep the
+     widgets' container queries (cqh) resolving. */
+  .dash-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    overflow: visible !important;
+    gap: 12px !important;
+  }
+  .dash-grid > * {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    height: 240px !important;
+    min-height: 0 !important;
+  }
+
+  /* Editable grid mobile fallback (RGL is replaced by this stack). */
+  .dash-rgl-wrap { flex: none; height: auto; }
+  .dash-mobile-stack { display: flex; flex-direction: column; gap: 12px; }
+  .dash-mobile-stack > * { width: 100%; }
+}

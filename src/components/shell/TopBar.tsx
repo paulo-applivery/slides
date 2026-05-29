@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { workspaces } from "@/lib/db/schema";
 import { UserMenu } from "./UserMenu";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
+import { MobileMenuButton } from "./MobileMenuButton";
 import { AppearanceMenu } from "@/components/theme/AppearanceMenu";
 
 /**
@@ -46,6 +47,7 @@ export async function TopBar({ crumbs, name, actions }: TopBarProps) {
 
   return (
     <header className="tb">
+      <MobileMenuButton />
       <div className="tb-title">
         {isAdmin && workspaceId ? (
           <WorkspaceSwitcher
