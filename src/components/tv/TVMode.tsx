@@ -154,14 +154,26 @@ export function TVMode({
   }, [slides.length, idx]);
 
   // Slide auto-advance.
+  //
+  // Keyed on the active slide's *primitives* (id, index, duration) — NOT on
+  // the `current` object identity. A live refetch re-parses the deck into
+  // fresh objects, so depending on `current` would clear and restart this
+  // timer on every refresh while the progress ring (keyed on the same
+  // primitives) keeps its original schedule — the two desync and the slide
+  // freezes on a full ring. `slides.length` is read through a ref so adding
+  // a slide elsewhere doesn't reset the slide that's currently playing.
+  const slidesLenRef = useRef(slides.length);
+  slidesLenRef.current = slides.length;
+  const currentId = current?.id;
+  const currentDuration = current?.durationSec;
   useEffect(() => {
-    if (!current) return;
+    if (currentId == null || currentDuration == null) return;
     const t = setTimeout(
-      () => setIdx((i) => (i + 1) % Math.max(1, slides.length)),
-      current.durationSec * 1000,
+      () => setIdx((i) => (i + 1) % Math.max(1, slidesLenRef.current)),
+      currentDuration * 1000,
     );
     return () => clearTimeout(t);
-  }, [current, slides.length]);
+  }, [currentId, currentDuration, idx]);
 
   // Cursor-hide after idle.
   useEffect(() => {
@@ -228,10 +240,12 @@ export function TVMode({
       <div className="tv-glow" />
       <SlideBackground effect={activeAppearance.background} />
 
-      <TVBeam
-        key={`${current.id}-${idx}-${current.durationSec}`}
-        durationSec={current.durationSec}
-      />
+      {activeAppearance.showProgress !== false && (
+        <TVBeam
+          key={`${current.id}-${idx}-${current.durationSec}`}
+          durationSec={current.durationSec}
+        />
+      )}
 
       {/* Slide stage. YouTube + URL slides skip the padded `.tv-paired`
           chrome via `.tv-slide-fullbleed` so the iframe runs edge-to-edge.

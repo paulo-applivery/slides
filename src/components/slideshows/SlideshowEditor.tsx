@@ -466,6 +466,26 @@ function SlideAppearanceControls({
       </div>
 
       <div className="ss-config-row">
+        <label className="ss-config-label">Progress bar</label>
+        <div className="ss-segmented">
+          {[
+            { v: false, label: "Off" },
+            { v: true, label: "On" },
+          ].map((o) => (
+            <button
+              key={o.label}
+              type="button"
+              className={`ss-seg ${(appearance.showProgress !== false) === o.v ? "active" : ""}`}
+              disabled={pending}
+              onClick={() => commit({ showProgress: o.v })}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="ss-config-row">
         <label className="ss-config-label">Brand color</label>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <input

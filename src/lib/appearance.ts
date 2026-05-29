@@ -27,6 +27,12 @@ export type SlideAppearance = {
   glassCards: boolean;
   /** Hex accent forwarded to the WebGL background + chart `--brand`/`--primary`. */
   brandColor: string;
+  /**
+   * Show the slide-duration progress ring around the screen edge while this
+   * slide plays. Defaults on; older rows that predate this field read as
+   * `undefined`, which the renderer treats as on (preserving prior behavior).
+   */
+  showProgress: boolean;
 };
 
 export const DEFAULT_BRAND_COLOR = "#5C8BFF";
@@ -51,4 +57,5 @@ export const DEFAULT_SLIDE_APPEARANCE: SlideAppearance = {
   background: null,
   glassCards: false,
   brandColor: DEFAULT_BRAND_COLOR,
+  showProgress: true,
 };

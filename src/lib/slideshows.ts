@@ -356,6 +356,9 @@ export async function updateSlideAppearance(
         const v = patch.brandColor.trim();
         if (/^#[0-9a-fA-F]{6}$/.test(v)) next.brandColor = v;
       }
+      if (patch.showProgress !== undefined) {
+        next.showProgress = !!patch.showProgress;
+      }
       return { ...s, appearance: next };
     }),
   );
